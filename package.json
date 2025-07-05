@@ -1,0 +1,18 @@
+{
+  "name": "babylon-typescript-boilerplate",
+  "version": "1.0.0",
+  "description": "Babylon.js TypeScript boilerplate",
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "serve": "python3 -m http.server 8000"
+  },
+  "dependencies": {
+    "@babylonjs/core": "^7.0.0",
+    "@babylonjs/loaders": "^7.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0"
+  }
+}
