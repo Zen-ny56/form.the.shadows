@@ -1,12 +1,17 @@
 import { Engine } from "@babylonjs/core/Engines/engine";
 import { Scene } from "@babylonjs/core/scene";
 import { SceneLoader } from "@babylonjs/core/Loading/sceneLoader";
+import { ArcRotateCamera } from "@babylonjs/core/Cameras/arcRotateCamera";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
 import "@babylonjs/loaders/glTF"; // Required for loading .glb/.gltf
 class GLBScene {
     constructor(canvas) {
         this.canvas = canvas;
         this.engine = new Engine(this.canvas, true);
         this.scene = new Scene(this.engine);
+        this.setupCamera();
+        this.setupLighting();
         this.setupResizeListener();
         this.setupScene();
     }
@@ -15,19 +20,37 @@ class GLBScene {
             this.engine.resize();
         });
     }
+    setupCamera() {
+        const camera = new ArcRotateCamera("camera", -Math.PI / 2, Math.PI / 2.5, 10, Vector3.Zero(), this.scene);
+        camera.attachControl(this.canvas, true);
+        this.scene.activeCamera = camera;
+    }
+    setupLighting() {
+        const light = new HemisphericLight("light", new Vector3(0, 1, 0), this.scene);
+        light.intensity = 0.7;
+    }
     setupScene() {
-        this.engine.displayLoadingUI();
+        // Start render loop immediately so we can see the camera/lighting
+        this.engine.runRenderLoop(() => {
+            this.scene.render();
+        });
         // ✅ Append entire .glb scene to the current scene
-        SceneLoader.LoadAssetContainerAsync("/models/", "Scene_7.glb", this.scene).then(() => {
-            this.scene.executeWhenReady(() => {
-                this.engine.hideLoadingUI();
-                this.engine.runRenderLoop(() => {
-                    this.scene.render();
-                });
-            });
+        console.log("🔍 Attempting to load GLB from: /public/models/Scene_7.glb");
+        SceneLoader.LoadAssetContainerAsync("/public/models/", "Scene_7.glb", this.scene).then((container) => {
+            console.log("✅ GLB loaded successfully:", container);
+            container.addAllToScene();
+            console.log("📦 Added all meshes to scene");
         }).catch((err) => {
             console.error("❌ Failed to load GLB scene:", err);
-            this.engine.hideLoadingUI();
+            console.log("🔍 Trying alternative path: ./public/models/Scene_7.glb");
+            // Try alternative path
+            SceneLoader.LoadAssetContainerAsync("./public/models/", "Scene_7.glb", this.scene).then((container) => {
+                console.log("✅ GLB loaded with alternative path:", container);
+                container.addAllToScene();
+                console.log("📦 Added all meshes to scene");
+            }).catch((err2) => {
+                console.error("❌ Alternative path also failed:", err2);
+            });
         });
     }
     dispose() {
