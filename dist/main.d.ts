@@ -1,1 +1,1 @@
-export {};
+import "@babylonjs/loaders/glTF";
