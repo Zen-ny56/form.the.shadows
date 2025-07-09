@@ -4,11 +4,11 @@ import { SceneLoader } from "@babylonjs/core/Loading/sceneLoader";
 import { ArcRotateCamera } from "@babylonjs/core/Cameras/arcRotateCamera";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
+import { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { Color3 } from "@babylonjs/core/Maths/math.color";
-import { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import "@babylonjs/loaders/glTF"; // Required for loading .glb/.gltf
 
 class GLBScene {
@@ -23,6 +23,7 @@ class GLBScene {
         this.setupLighting();
         this.setupCustomMaterials();
         this.setupResizeListener();
+        this.setupInteractiveCoordinateDisplay();
         this.setupScene();
     }
 
@@ -39,21 +40,112 @@ class GLBScene {
         this.scene.activeCamera = camera;
     }
 
-    private repositionCameraForSideView(): void {
-        const floorPlane = this.scene.getMeshByName("floor_plane");
-        if (floorPlane && this.scene.activeCamera) {
-            const camera = this.scene.activeCamera as ArcRotateCamera;
-            
-            // Position camera for side view - slightly above and to the side
-            camera.setTarget(floorPlane.position);
-            camera.alpha = -Math.PI / 2; // Side view angle
-            camera.beta = Math.PI / 3; // Slightly above angle
-            camera.radius = 15; // Distance from target
-            
-            console.log("📹 Camera repositioned for side view based on floor_plane");
-        } else {
-            console.warn("⚠️ floor_plane not found - camera remains at default position");
-        }
+    private positionObjectsAtCoordinates(): void {
+        // Define object positions based on the exact mesh names and coordinates you provided
+        const objectPositions: { [key: string]: Vector3 } = {
+            'paddleLeft': new Vector3(-20.28, 1.00, 0.00),
+            'pongBall': new Vector3(0.00, 0.78, 0.00),
+            'centreLine': new Vector3(0.00, 0.05, 0.00),
+            'paddleRight': new Vector3(20.28, 1.00, 0.00),
+            'floorPlane': new Vector3(0.00, 0.00, 0.00)
+        };
+
+        // Position each specific mesh by finding it in the scene
+        Object.keys(objectPositions).forEach(meshName => {
+            const mesh = this.scene.getMeshByName(meshName);
+            if (mesh) {
+                const pos = objectPositions[meshName];
+                mesh.position.copyFrom(pos);
+                console.log(`📍 Positioned ${meshName} at (${pos.x.toFixed(2)}, ${pos.y.toFixed(2)}, ${pos.z.toFixed(2)})`);
+            } else {
+                console.warn(`⚠️ Mesh not found in GLB: ${meshName}`);
+            }
+        });
+    }
+
+    private lockCameraToObjectCoordinates(): void {
+        const camera = this.scene.activeCamera as ArcRotateCamera;
+        
+        // Lock camera to center of the game area where objects are positioned
+        // Objects span from x: -20.28 to 20.28, centered at y: 0.78 (ball height)
+        camera.setTarget(new Vector3(0, 0.78, 0)); // Center of the game area
+        camera.alpha = Math.PI / 2; // 90 degree rotation to make paddles left/right
+        camera.beta = 0; // Top-down view (straight down)
+        camera.radius = 43; // Zoomed in closer to the playing field
+        
+        // Disable camera controls to lock it in place
+        camera.detachControl();
+        
+        console.log("📹 Camera locked to top-down view - paddles left/right");
+        console.log("📹 Camera target: (0.00, 0.78, 0.00) - Center of game area");
+    }
+
+    private setupInteractiveCoordinateDisplay(): void {
+        // Add click event to display object coordinates
+        this.scene.onPointerObservable.add((pointerInfo) => {
+            if (pointerInfo.pickInfo?.hit && pointerInfo.pickInfo.pickedMesh) {
+                const mesh = pointerInfo.pickInfo.pickedMesh;
+                const pos = mesh.position;
+                console.log(`🎯 Clicked: ${mesh.name} at (${pos.x.toFixed(2)}, ${pos.y.toFixed(2)}, ${pos.z.toFixed(2)})`);
+                
+                // Display on webpage
+                this.displayCoordinateOnPage(mesh.name, pos);
+            }
+        });
+
+        // Add keyboard shortcut to log all coordinates
+        window.addEventListener('keydown', (event) => {
+            if (event.key === 'c' || event.key === 'C') {
+                this.logAllObjectCoordinates();
+            }
+        });
+    }
+
+    private displayCoordinateOnPage(meshName: string, position: Vector3): void {
+        // Remove existing coordinate display
+        const existing = document.getElementById('coordinateDisplay');
+        if (existing) existing.remove();
+
+        // Create coordinate display element
+        const display = document.createElement('div');
+        display.id = 'coordinateDisplay';
+        display.innerHTML = `
+            <strong>${meshName}</strong><br>
+            X: ${position.x.toFixed(2)}<br>
+            Y: ${position.y.toFixed(2)}<br>
+            Z: ${position.z.toFixed(2)}
+        `;
+        display.style.cssText = `
+            position: fixed;
+            top: 10px;
+            left: 10px;
+            background: rgba(0,0,0,0.8);
+            color: white;
+            padding: 10px;
+            border-radius: 5px;
+            font-family: monospace;
+            font-size: 14px;
+            z-index: 1000;
+            pointer-events: none;
+        `;
+        
+        document.body.appendChild(display);
+        
+        // Auto-remove after 3 seconds
+        setTimeout(() => {
+            if (document.getElementById('coordinateDisplay')) {
+                document.getElementById('coordinateDisplay')?.remove();
+            }
+        }, 3000);
+    }
+
+    private logAllObjectCoordinates(): void {
+        console.log("📍 ALL OBJECT COORDINATES (Press 'C' to view):");
+        this.scene.meshes.forEach((mesh, index) => {
+            if (mesh.name !== "skybox") {
+                console.log(`${index}: ${mesh.name} - Position: (${mesh.position.x.toFixed(2)}, ${mesh.position.y.toFixed(2)}, ${mesh.position.z.toFixed(2)})`);
+            }
+        });
     }
 
     private setupLighting(): void {
@@ -66,26 +158,39 @@ class GLBScene {
     }
 
     private createBackgroundLayers(): void {
-        // 1. Space Gradient (furthest back)
-        const spaceGradient = MeshBuilder.CreatePlane("spaceGradient", {size: 50}, this.scene);
-        spaceGradient.position.z = 20; // Far behind gameplay
+        this.createSkybox();
+    }
+
+    private createSkybox(): void {
+        // Create a large cube that surrounds the entire scene - better for rectangular textures
+        const skybox = MeshBuilder.CreateBox("skybox", {size: 1000}, this.scene);
         
-        const spaceGradientMat = new StandardMaterial("spaceGradientMat", this.scene);
-        spaceGradientMat.diffuseTexture = new Texture("textures/space_gradient.png", this.scene);
-        spaceGradientMat.emissiveTexture = spaceGradientMat.diffuseTexture;
-        spaceGradientMat.emissiveColor = new Color3(0.3, 0.3, 0.5);
-        spaceGradient.material = spaceGradientMat;
+        // Create skybox material
+        const skyboxMaterial = new StandardMaterial("skyboxMaterial", this.scene);
+        skyboxMaterial.backFaceCulling = false; // Render inside faces
         
-        // 2. Starfield (middle layer)
-        const starfield = MeshBuilder.CreatePlane("starfield", {size: 40}, this.scene);
-        starfield.position.z = 15; // In front of gradient, behind gameplay
+        // Use diffuse texture instead of reflection for proper UV mapping
+        skyboxMaterial.diffuseTexture = new Texture("public/textures/starfield.png", this.scene);
+        skyboxMaterial.diffuseTexture.wrapU = Texture.CLAMP_ADDRESSMODE;
+        skyboxMaterial.diffuseTexture.wrapV = Texture.CLAMP_ADDRESSMODE;
         
-        const starfieldMat = new StandardMaterial("starfieldMat", this.scene);
-        starfieldMat.diffuseTexture = new Texture("textures/starfield_bg.png", this.scene);
-        starfieldMat.emissiveTexture = starfieldMat.diffuseTexture;
-        starfieldMat.emissiveColor = new Color3(0.8, 0.8, 1.0);
-        starfieldMat.diffuseTexture.hasAlpha = true; // Important for transparency
-        starfield.material = starfieldMat;
+        // Set emissive to make it glow without lighting
+        skyboxMaterial.emissiveTexture = skyboxMaterial.diffuseTexture;
+        skyboxMaterial.emissiveColor = new Color3(1.0, 1.0, 1.0); // White to preserve original colors
+        
+        skyboxMaterial.specularColor = new Color3(0, 0, 0); // No specular lighting
+        skyboxMaterial.disableLighting = true; // Disable lighting calculations
+        
+        skybox.material = skyboxMaterial;
+        skybox.infiniteDistance = true; // Always render at infinite distance
+        
+        // Make sure skybox moves with camera but ignores translation
+        skybox.parent = this.scene.activeCamera;
+        
+        // Add rotation animation for moving stars effect
+        this.scene.registerBeforeRender(() => {
+            skybox.rotation.y += 0.001; // Increased rotation speed
+        });
     }
 
     private setupScene(): void {
@@ -101,8 +206,11 @@ class GLBScene {
             container.addAllToScene();
             console.log("📦 Added all meshes to scene");
             
-            // Reposition camera based on floor_plane
-            this.repositionCameraForSideView();
+            // Position objects at their proper coordinates
+            this.positionObjectsAtCoordinates();
+            
+            // Lock camera to object coordinates
+            this.lockCameraToObjectCoordinates();
         }).catch((err) => {
             console.error("❌ Failed to load GLB scene:", err);
             console.log("🔍 Trying alternative path: ./public/models/game.glb");
@@ -113,8 +221,8 @@ class GLBScene {
                 container.addAllToScene();
                 console.log("📦 Added all meshes to scene");
                 
-                // Reposition camera based on floor_plane
-                this.repositionCameraForSideView();
+                // Lock camera to object coordinates
+                this.lockCameraToObjectCoordinates();
             }).catch((err2) => {
                 console.error("❌ Alternative path also failed:", err2);
             });

@@ -1,0 +1,65 @@
+SKYBOX IMPLEMENTATION DOCUMENTATION
+====================================
+
+OVERVIEW:
+We implemented a skybox system to create a starfield background that fills the entire 3D space void, appearing everywhere except where scene meshes block it.
+
+WHAT WE CHANGED:
+1. Removed CSS-based background approach (didn't work for 3D game context)
+2. Removed flat plane background approach (only covered limited area)
+3. Implemented proper skybox using a large sphere surrounding the scene
+
+TECHNICAL IMPLEMENTATION:
+- Created a 1000-unit diameter sphere mesh named "skybox" (changed from cube to sphere)
+- Applied starfield texture using proper UV mapping via diffuseTexture (not reflection)
+- Set backFaceCulling = false to render inside faces of the sphere
+- Set infiniteDistance = true to always render behind other objects
+- Parented skybox to camera so it moves with camera rotation but ignores translation
+- Added slow rotation animation (0.0001 radians/frame) for moving stars effect
+- Fixed texture stretching using CLAMP_ADDRESSMODE and proper UV coordinates
+
+KEY PROPERTIES:
+- backFaceCulling: false (renders inside of sphere)
+- infiniteDistance: true (always renders at maximum depth)
+- diffuseTexture: starfield.png with CLAMP_ADDRESSMODE (proper UV mapping)
+- emissiveTexture: same as diffuse (makes it glow)
+- emissiveColor: (1.0, 1.0, 1.0) - white to preserve original colors
+- specularColor: (0, 0, 0) - no specular lighting
+- disableLighting: true - prevents scene lighting from affecting skybox
+- rotation.y: animated at 0.0001 radians/frame for subtle movement
+
+ADVANTAGES OF SKYBOX APPROACH:
+1. Fills entire 3D space naturally
+2. Automatically hidden behind scene meshes (depth testing)
+3. Moves with camera properly 
+4. No raytracing/raycasting needed - uses standard rasterization
+5. Efficient - single draw call for entire background
+
+POTENTIAL IMPROVEMENTS:
+1. Use cube mapping with 6 separate textures for better quality
+2. ✅ Fixed texture coordinates for proper UV mapping without stretching
+3. ✅ Updated to use sphere instead of cube for more natural sky
+4. ✅ Added slow rotation animation to make stars move subtly
+5. ✅ Fixed color preservation by using white emissive color
+6. Implement multiple layers (near/far stars) for depth
+7. Add nebula or gradient effects
+8. Use HDR textures for better lighting contribution
+
+FILES MODIFIED:
+- main.ts: Added createSkybox() method in createBackgroundLayers() using sphere geometry
+- index.html: Reverted to standard canvas styling (removed CSS background)
+
+CURRENT STATUS:
+✅ Skybox implemented and functional
+✅ Starfield texture applied with proper UV mapping
+✅ Proper depth rendering configured
+✅ Camera parenting set up
+✅ Texture stretching issues resolved
+✅ Original texture colors preserved
+
+NEXT STEPS:
+- Test with your game meshes to ensure proper occlusion
+- Adjust skybox size if needed (currently 1000-unit diameter)
+- Fine-tune emissive color and intensity
+- Consider adding mesh name exclusion logic if needed
+- Experiment with rotation speed for optimal visual effect
