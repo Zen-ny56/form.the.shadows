@@ -17,7 +17,6 @@ class GLBScene {
         this.setupLighting();
         this.setupCustomMaterials();
         this.setupResizeListener();
-        this.setupInteractiveCoordinateDisplay();
         this.setupScene();
     }
     setupResizeListener() {
@@ -53,98 +52,74 @@ class GLBScene {
             }
         });
     }
-    lockCameraToObjectCoordinates() {
-        const camera = this.scene.activeCamera;
-        // Lock camera to center of the game area where objects are positioned
-        // Objects span from x: -20.28 to 20.28, centered at y: 0.78 (ball height)
-        camera.setTarget(new Vector3(0, 0.78, 0)); // Center of the game area
-        camera.alpha = Math.PI / 2; // 90 degree rotation to make paddles left/right
-        camera.beta = 0; // Top-down view (straight down)
-        camera.radius = 43; // Zoomed in closer to the playing field
-        // Disable camera controls to lock it in place
-        camera.detachControl();
-        console.log("📹 Camera locked to top-down view - paddles left/right");
-        console.log("📹 Camera target: (0.00, 0.78, 0.00) - Center of game area");
-    }
-    setupInteractiveCoordinateDisplay() {
-        // Add click event to display object coordinates
-        this.scene.onPointerObservable.add((pointerInfo) => {
-            if (pointerInfo.pickInfo?.hit && pointerInfo.pickInfo.pickedMesh) {
-                const mesh = pointerInfo.pickInfo.pickedMesh;
-                const pos = mesh.position;
-                console.log(`🎯 Clicked: ${mesh.name} at (${pos.x.toFixed(2)}, ${pos.y.toFixed(2)}, ${pos.z.toFixed(2)})`);
-                // Display on webpage
-                this.displayCoordinateOnPage(mesh.name, pos);
-            }
-        });
-        // Add keyboard shortcut to log all coordinates
-        window.addEventListener('keydown', (event) => {
-            if (event.key === 'c' || event.key === 'C') {
-                this.logAllObjectCoordinates();
-            }
-        });
-    }
-    displayCoordinateOnPage(meshName, position) {
-        // Remove existing coordinate display
-        const existing = document.getElementById('coordinateDisplay');
-        if (existing)
-            existing.remove();
-        // Create coordinate display element
-        const display = document.createElement('div');
-        display.id = 'coordinateDisplay';
-        display.innerHTML = `
-            <strong>${meshName}</strong><br>
-            X: ${position.x.toFixed(2)}<br>
-            Y: ${position.y.toFixed(2)}<br>
-            Z: ${position.z.toFixed(2)}
-        `;
-        display.style.cssText = `
-            position: fixed;
-            top: 10px;
-            left: 10px;
-            background: rgba(0,0,0,0.8);
-            color: white;
-            padding: 10px;
-            border-radius: 5px;
-            font-family: monospace;
-            font-size: 14px;
-            z-index: 1000;
-            pointer-events: none;
-        `;
-        document.body.appendChild(display);
-        // Auto-remove after 3 seconds
-        setTimeout(() => {
-            if (document.getElementById('coordinateDisplay')) {
-                document.getElementById('coordinateDisplay')?.remove();
-            }
-        }, 3000);
-    }
-    logAllObjectCoordinates() {
-        console.log("📍 ALL OBJECT COORDINATES (Press 'C' to view):");
-        this.scene.meshes.forEach((mesh, index) => {
-            if (mesh.name !== "skybox") {
-                console.log(`${index}: ${mesh.name} - Position: (${mesh.position.x.toFixed(2)}, ${mesh.position.y.toFixed(2)}, ${mesh.position.z.toFixed(2)})`);
-            }
-        });
-    }
-    debugObjectMaterials() {
-        console.log("🔍 DEBUGGING OBJECT MATERIALS:");
-        this.scene.meshes.forEach((mesh, index) => {
-            if (mesh.name !== "skybox" && mesh.material) {
-                console.log(`${index}: ${mesh.name} - Material:`, mesh.material);
-                const material = mesh.material;
-                if (material.disableLighting !== undefined) {
-                    console.log(`  - disableLighting: ${material.disableLighting}`);
-                }
-                if (material.emissiveColor) {
-                    console.log(`  - emissiveColor: (${material.emissiveColor.r}, ${material.emissiveColor.g}, ${material.emissiveColor.b})`);
-                }
-                if (material.emissiveTexture) {
-                    console.log(`  - has emissiveTexture: true`);
-                }
-            }
-        });
-    }
+    // private lockCameraToObjectCoordinates(): void {
+    //     const camera = this.scene.activeCamera as ArcRotateCamera;
+    //     
+    //     // Lock camera to center of the game area where objects are positioned
+    //     // Objects span from x: -20.28 to 20.28, centered at y: 0.78 (ball height)
+    //     camera.setTarget(new Vector3(0, 0.78, 0)); // Center of the game area
+    //     camera.alpha = Math.PI / 2; // 90 degree rotation to make paddles left/right
+    //     camera.beta = 0; // Top-down view (straight down)
+    //     camera.radius = 43; // Zoomed in closer to the playing field
+    //     
+    //     // Disable camera controls to lock it in place
+    //     camera.detachControl();
+    //     
+    //     console.log("📹 Camera locked to top-down view - paddles left/right");
+    //     console.log("📹 Camera target: (0.00, 0.78, 0.00) - Center of game area");
+    // }
+    // private setupInteractiveCoordinateDisplay(): void {
+    //     // Add click event to display object coordinates
+    //     this.scene.onPointerObservable.add((pointerInfo) => {
+    //         if (pointerInfo.pickInfo?.hit && pointerInfo.pickInfo.pickedMesh) {
+    //             const mesh = pointerInfo.pickInfo.pickedMesh;
+    //             const pos = mesh.position;
+    //             console.log(`🎯 Clicked: ${mesh.name} at (${pos.x.toFixed(2)}, ${pos.y.toFixed(2)}, ${pos.z.toFixed(2)})`);
+    //             // Display on webpage
+    //             this.displayCoordinateOnPage(mesh.name, pos);
+    //         }
+    //     });
+    //     // Add keyboard shortcut to log all coordinates
+    //     window.addEventListener('keydown', (event) => {
+    //         if (event.key === 'c' || event.key === 'C') {
+    //             this.logAllObjectCoordinates();
+    //         }
+    //     });
+    // }
+    // private displayCoordinateOnPage(meshName: string, position: Vector3): void {
+    //     // Remove existing coordinate display
+    //     const existing = document.getElementById('coordinateDisplay');
+    //     if (existing) existing.remove();
+    //     // Create coordinate display element
+    //     const display = document.createElement('div');
+    //     display.id = 'coordinateDisplay';
+    //     display.innerHTML = `
+    //         <strong>${meshName}</strong><br>
+    //         X: ${position.x.toFixed(2)}<br>
+    //         Y: ${position.y.toFixed(2)}<br>
+    //         Z: ${position.z.toFixed(2)}
+    //     `;
+    //     display.style.cssText = `
+    //         position: fixed;
+    //         top: 10px;
+    //         left: 10px;
+    //         background: rgba(0,0,0,0.8);
+    //         color: white;
+    //         padding: 10px;
+    //         border-radius: 5px;
+    //         font-family: monospace;
+    //         font-size: 14px;
+    //         z-index: 1000;
+    //         pointer-events: none;
+    //     `;
+    //     document.body.appendChild(display);
+    //     // Auto-remove after 3 seconds
+    //     setTimeout(() => {
+    //         if (document.getElementById('coordinateDisplay')) {
+    //             document.getElementById('coordinateDisplay')?.remove();
+    //         }
+    //     }, 3000);
+    // }
     setupLighting() {
     }
     setupCustomMaterials() {
@@ -191,9 +166,9 @@ class GLBScene {
             // Position objects at their proper coordinates
             this.positionObjectsAtCoordinates();
             // Lock camera to object coordinates
-            this.lockCameraToObjectCoordinates();
+            // this.lockCameraToObjectCoordinates();
             // Debug materials to check lighting compatibility
-            this.debugObjectMaterials();
+            // this.debugObjectMaterials();
         }).catch((err) => {
             console.error("❌ Failed to load GLB scene:", err);
             console.log("🔍 Trying alternative path: ./public/models/game.glb");
@@ -203,9 +178,9 @@ class GLBScene {
                 container.addAllToScene();
                 console.log("📦 Added all meshes to scene");
                 // Lock camera to object coordinates
-                this.lockCameraToObjectCoordinates();
+                // this.lockCameraToObjectCoordinates();
                 // Debug materials to check lighting compatibility
-                this.debugObjectMaterials();
+                // this.debugObjectMaterials();
             }).catch((err2) => {
                 console.error("❌ Alternative path also failed:", err2);
             });
