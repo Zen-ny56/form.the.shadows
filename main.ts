@@ -3,7 +3,10 @@ import { Scene } from "@babylonjs/core/scene";
 import { SceneLoader } from "@babylonjs/core/Loading/sceneLoader";
 import { ArcRotateCamera } from "@babylonjs/core/Cameras/arcRotateCamera";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { PointLight } from "@babylonjs/core/Lights/pointLight";
 import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
+import { SpotLight } from "@babylonjs/core/Lights/spotLight";
+import { Ray } from "@babylonjs/core/Culling/ray";
 import { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
@@ -23,7 +26,7 @@ class GLBScene {
         this.setupLighting();
         this.setupCustomMaterials();
         this.setupResizeListener();
-        this.setupInteractiveCoordinateDisplay();
+        // this.setupInteractiveCoordinateDisplay();
         this.setupScene();
     }
 
@@ -80,77 +83,65 @@ class GLBScene {
         console.log("📹 Camera target: (0.00, 0.78, 0.00) - Center of game area");
     }
 
-    private setupInteractiveCoordinateDisplay(): void {
-        // Add click event to display object coordinates
-        this.scene.onPointerObservable.add((pointerInfo) => {
-            if (pointerInfo.pickInfo?.hit && pointerInfo.pickInfo.pickedMesh) {
-                const mesh = pointerInfo.pickInfo.pickedMesh;
-                const pos = mesh.position;
-                console.log(`🎯 Clicked: ${mesh.name} at (${pos.x.toFixed(2)}, ${pos.y.toFixed(2)}, ${pos.z.toFixed(2)})`);
+    // private setupInteractiveCoordinateDisplay(): void {
+    //     // Add click event to display object coordinates
+    //     this.scene.onPointerObservable.add((pointerInfo) => {
+    //         if (pointerInfo.pickInfo?.hit && pointerInfo.pickInfo.pickedMesh) {
+    //             const mesh = pointerInfo.pickInfo.pickedMesh;
+    //             const pos = mesh.position;
+    //             console.log(`🎯 Clicked: ${mesh.name} at (${pos.x.toFixed(2)}, ${pos.y.toFixed(2)}, ${pos.z.toFixed(2)})`);
                 
-                // Display on webpage
-                this.displayCoordinateOnPage(mesh.name, pos);
-            }
-        });
+    //             // Display on webpage
+    //             this.displayCoordinateOnPage(mesh.name, pos);
+    //         }
+    //     });
 
-        // Add keyboard shortcut to log all coordinates
-        window.addEventListener('keydown', (event) => {
-            if (event.key === 'c' || event.key === 'C') {
-                this.logAllObjectCoordinates();
-            }
-        });
-    }
+    //     // Add keyboard shortcut to log all coordinates
+    //     window.addEventListener('keydown', (event) => {
+    //         if (event.key === 'c' || event.key === 'C') {
+    //             this.logAllObjectCoordinates();
+    //         }
+    //     });
+    // }
 
-    private displayCoordinateOnPage(meshName: string, position: Vector3): void {
-        // Remove existing coordinate display
-        const existing = document.getElementById('coordinateDisplay');
-        if (existing) existing.remove();
+    // private displayCoordinateOnPage(meshName: string, position: Vector3): void {
+    //     // Remove existing coordinate display
+    //     const existing = document.getElementById('coordinateDisplay');
+    //     if (existing) existing.remove();
 
-        // Create coordinate display element
-        const display = document.createElement('div');
-        display.id = 'coordinateDisplay';
-        display.innerHTML = `
-            <strong>${meshName}</strong><br>
-            X: ${position.x.toFixed(2)}<br>
-            Y: ${position.y.toFixed(2)}<br>
-            Z: ${position.z.toFixed(2)}
-        `;
-        display.style.cssText = `
-            position: fixed;
-            top: 10px;
-            left: 10px;
-            background: rgba(0,0,0,0.8);
-            color: white;
-            padding: 10px;
-            border-radius: 5px;
-            font-family: monospace;
-            font-size: 14px;
-            z-index: 1000;
-            pointer-events: none;
-        `;
+    //     // Create coordinate display element
+    //     const display = document.createElement('div');
+    //     display.id = 'coordinateDisplay';
+    //     display.innerHTML = `
+    //         <strong>${meshName}</strong><br>
+    //         X: ${position.x.toFixed(2)}<br>
+    //         Y: ${position.y.toFixed(2)}<br>
+    //         Z: ${position.z.toFixed(2)}
+    //     `;
+    //     display.style.cssText = `
+    //         position: fixed;
+    //         top: 10px;
+    //         left: 10px;
+    //         background: rgba(0,0,0,0.8);
+    //         color: white;
+    //         padding: 10px;
+    //         border-radius: 5px;
+    //         font-family: monospace;
+    //         font-size: 14px;
+    //         z-index: 1000;
+    //         pointer-events: none;
+    //     `;
         
-        document.body.appendChild(display);
+    //     document.body.appendChild(display);
         
-        // Auto-remove after 3 seconds
-        setTimeout(() => {
-            if (document.getElementById('coordinateDisplay')) {
-                document.getElementById('coordinateDisplay')?.remove();
-            }
-        }, 3000);
-    }
-
-    private logAllObjectCoordinates(): void {
-        console.log("📍 ALL OBJECT COORDINATES (Press 'C' to view):");
-        this.scene.meshes.forEach((mesh, index) => {
-            if (mesh.name !== "skybox") {
-                console.log(`${index}: ${mesh.name} - Position: (${mesh.position.x.toFixed(2)}, ${mesh.position.y.toFixed(2)}, ${mesh.position.z.toFixed(2)})`);
-            }
-        });
-    }
-
-    private setupLighting(): void {
-        const light = new HemisphericLight("light", new Vector3(0, 1, 0), this.scene);
-        light.intensity = 0.3; // Dimmer for glow effects
+    //     // Auto-remove after 3 seconds
+    //     setTimeout(() => {
+    //         if (document.getElementById('coordinateDisplay')) {
+    //             document.getElementById('coordinateDisplay')?.remove();
+    //         }
+    //     }, 3000);
+    // }
+    private setupLighting(): void { 
     }
 
     private setupCustomMaterials(): void {
@@ -211,6 +202,9 @@ class GLBScene {
             
             // Lock camera to object coordinates
             this.lockCameraToObjectCoordinates();
+            
+            // Debug materials to check lighting compatibility
+            // this.debugObjectMaterials();
         }).catch((err) => {
             console.error("❌ Failed to load GLB scene:", err);
             console.log("🔍 Trying alternative path: ./public/models/game.glb");
@@ -223,6 +217,9 @@ class GLBScene {
                 
                 // Lock camera to object coordinates
                 this.lockCameraToObjectCoordinates();
+                
+                // Debug materials to check lighting compatibility
+                // this.debugObjectMaterials();
             }).catch((err2) => {
                 console.error("❌ Alternative path also failed:", err2);
             });

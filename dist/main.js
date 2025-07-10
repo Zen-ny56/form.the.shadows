@@ -3,7 +3,6 @@ import { Scene } from "@babylonjs/core/scene";
 import { SceneLoader } from "@babylonjs/core/Loading/sceneLoader";
 import { ArcRotateCamera } from "@babylonjs/core/Cameras/arcRotateCamera";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
-import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
@@ -128,9 +127,25 @@ class GLBScene {
             }
         });
     }
+    debugObjectMaterials() {
+        console.log("🔍 DEBUGGING OBJECT MATERIALS:");
+        this.scene.meshes.forEach((mesh, index) => {
+            if (mesh.name !== "skybox" && mesh.material) {
+                console.log(`${index}: ${mesh.name} - Material:`, mesh.material);
+                const material = mesh.material;
+                if (material.disableLighting !== undefined) {
+                    console.log(`  - disableLighting: ${material.disableLighting}`);
+                }
+                if (material.emissiveColor) {
+                    console.log(`  - emissiveColor: (${material.emissiveColor.r}, ${material.emissiveColor.g}, ${material.emissiveColor.b})`);
+                }
+                if (material.emissiveTexture) {
+                    console.log(`  - has emissiveTexture: true`);
+                }
+            }
+        });
+    }
     setupLighting() {
-        const light = new HemisphericLight("light", new Vector3(0, 1, 0), this.scene);
-        light.intensity = 0.3; // Dimmer for glow effects
     }
     setupCustomMaterials() {
         this.createBackgroundLayers();
@@ -177,6 +192,8 @@ class GLBScene {
             this.positionObjectsAtCoordinates();
             // Lock camera to object coordinates
             this.lockCameraToObjectCoordinates();
+            // Debug materials to check lighting compatibility
+            this.debugObjectMaterials();
         }).catch((err) => {
             console.error("❌ Failed to load GLB scene:", err);
             console.log("🔍 Trying alternative path: ./public/models/game.glb");
@@ -187,6 +204,8 @@ class GLBScene {
                 console.log("📦 Added all meshes to scene");
                 // Lock camera to object coordinates
                 this.lockCameraToObjectCoordinates();
+                // Debug materials to check lighting compatibility
+                this.debugObjectMaterials();
             }).catch((err2) => {
                 console.error("❌ Alternative path also failed:", err2);
             });
