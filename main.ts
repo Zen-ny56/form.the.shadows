@@ -156,7 +156,14 @@ class GLBScene {
     private makePaddleEmitLight(parentMesh: AbstractMesh, lightColor: Color3, side: string): void {
         // First, make the paddle itself emit light visually
         const emissiveMaterial = new PBRMaterial(`${parentMesh.name}_emissive`, this.scene);
-        emissiveMaterial.albedoColor = new Color3(0.1, 0.1, 0.1); // Dark base
+        
+        // Set base color to match the light emission for better color harmony
+        if (side === 'left') {
+            emissiveMaterial.albedoColor = new Color3(0.05, 0.15, 0.20); // Dark cyan-blue base
+        } else {
+            emissiveMaterial.albedoColor = new Color3(0.20, 0.08, 0.02); // Dark orange-red base
+        }
+        
         emissiveMaterial.emissiveColor = lightColor;
         emissiveMaterial.emissiveIntensity = 2.0; // Strong emissive glow
         emissiveMaterial.roughness = 0.1;
