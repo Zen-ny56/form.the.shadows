@@ -1,0 +1,55 @@
+# Light Setup Documentation
+
+## Headlight System (Current Implementation)
+
+### Overview
+The lighting system uses limited-range point lights positioned like car headlights on the paddles. This approach provides effective lighting and shadow effects without the complexity of full shadow generation systems.
+
+### Implementation Details
+
+#### Core Methods
+- `setupLighting()` - Entry point, calls setupHeadlightSystem()
+- `setupHeadlightSystem()` - Prepares the headlight system (called during scene initialization)
+- `createHeadlightEffect(parentMesh, lightColor, side)` - Creates a point light for a specific paddle
+- `createHeadlightsForGameObjects()` - Creates headlights for paddles after GLB loading
+
+#### Headlight Creation Process
+1. **Light Positioning**: Creates point lights offset from paddle positions like car headlights
+2. **Limited Range**: Uses controlled intensity (3.0) and range (8.0) to avoid over-illumination
+3. **Color Coding**: Left paddle gets cyan-blue lights, right paddle gets orange-red lights
+4. **Parenting**: Attaches lights to paddles so they move together
+5. **Sharp Falloff**: Uses GLTF falloff type for crisp light boundaries
+
+#### Game Object Lighting
+- **Left Paddle**: Cyan-blue headlight (0.3, 0.8, 1.0)
+- **Right Paddle**: Orange-red headlight (1.0, 0.6, 0.2)
+- **Ball**: No direct lighting (illuminated by paddle headlights)
+- **Light Offset**: Positioned slightly forward and above paddle center
+
+#### Technical Details
+- Light type: PointLight with FALLOFF_GLTF
+- Intensity: 3.0 (moderate for controlled lighting)
+- Range: 8.0 units (limited to avoid scene-wide illumination)
+- Position offset: ±0.5 units sideways, +0.3 units up, +1.0 units forward
+
+### Benefits of This Approach
+1. **Effective Lighting**: Provides good illumination and natural shadows
+2. **Limited Impact**: Controlled range prevents over-lighting the scene
+3. **Team Colors**: Different colored lights help distinguish players
+4. **Performance**: Simple point lights are efficient
+5. **Realistic**: Mimics car headlight behavior for retro gaming aesthetic
+
+### Files Modified
+- `main.ts:144-190` - Headlight system implementation
+- Called from GLB loading callbacks after object positioning
+
+### Previous Approaches
+
+#### Shadow Sprites (Reverted)
+Simple plane meshes with pixelated textures positioned beneath objects. Reverted because the pixelated effect wasn't effective enough and sprites didn't provide dynamic lighting.
+
+#### Complex Lighting System (Reverted)
+Used Babylon.js ShadowGenerator, GlowLayer, and PBRMaterials with multiple point lights. Reverted due to:
+- Complexity and compatibility issues
+- Performance concerns with multiple shadow generators
+- Conflicts with existing materials and lighting setup
