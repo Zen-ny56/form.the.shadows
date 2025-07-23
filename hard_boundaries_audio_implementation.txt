@@ -1,0 +1,248 @@
+HARD BOUNDARIES + AUDIO FEEDBACK IMPLEMENTATION GUIDE
+=====================================================
+
+OVERVIEW:
+---------
+This implementation combines instant boundary stopping (hard boundaries) with sound effects 
+to give players clear audio feedback when they hit the limits of the playing area.
+
+FOLDER STRUCTURE FOR AUDIO:
+---------------------------
+Create this folder structure in your project:
+
+/public/
+  /audio/
+    /paddle/
+      boundary_hit.wav      (or .mp3, .ogg)
+      boundary_warning.wav  (optional - for near-boundary warning)
+
+AUDIO FILE SOURCES:
+------------------
+
+1. FREE SOUND WEBSITES:
+   - Freesound.org (requires free account)
+   - Zapsplat.com (free with account)
+   - BBC Sound Effects Library (free, no account needed)
+   - Adobe Audition comes with free sound packs
+
+2. WHAT SOUNDS TO LOOK FOR:
+   - "Ping" or "Pong" sounds (classic arcade)
+   - "Beep" or "Blip" electronic sounds
+   - "Click" or "Tap" percussive sounds
+   - "Ding" bell-like sounds
+   - Short metallic impacts
+
+3. SOUND SPECIFICATIONS:
+   - Duration: 0.1 - 0.5 seconds (very short)
+   - Format: .wav (best), .mp3, or .ogg
+   - Sample rate: 44.1kHz or 48kHz
+   - Bit depth: 16-bit minimum
+   - Keep file sizes small (under 100KB each)
+
+4. GENERATE YOUR OWN (Free tools):
+   - Audacity (free desktop app)
+   - Beepbox.co (online music maker)
+   - Tone generators online
+   - Record yourself tapping objects
+
+BABYLON.JS AUDIO SETUP:
+----------------------
+
+Import required audio classes:
+```typescript
+import { Sound } from "@babylonjs/core/Audio/sound";
+```
+
+IMPLEMENTATION CODE:
+===================
+
+1. ADD TO CLASS PROPERTIES:
+```typescript
+private boundaryHitSound: Sound | null = null;
+private lastBoundaryHitTime: number = 0;
+private boundaryHitCooldown: number = 200; // ms between sounds
+```
+
+2. INITIALIZE AUDIO IN CONSTRUCTOR OR SETUP:
+```typescript
+private setupAudio(): void {
+    // Load boundary hit sound
+    this.boundaryHitSound = new Sound(
+        "boundaryHit", 
+        "/public/audio/paddle/boundary_hit.wav", 
+        this.scene,
+        () => {
+            console.log("🔊 Boundary hit sound loaded");
+        },
+        {
+            volume: 0.3,      // 30% volume (adjust as needed)
+            playbackRate: 1.0, // Normal speed
+            loop: false       // Don't loop
+        }
+    );
+}
+```
+
+3. PADDLE MOVEMENT WITH DYNAMIC BOUNDARIES:
+```typescript
+private updatePaddlePosition(paddle: AbstractMesh, inputDirection: number): void {
+    if (inputDirection === 0) return; // No movement needed
+    
+    const moveSpeed = 0.2; // Adjust speed as needed
+    const oldZ = paddle.position.z;
+    
+    // Calculate new position on Z-axis (side-to-side movement)
+    const newZ = paddle.position.z + (inputDirection * moveSpeed);
+    
+    console.log(`🎯 ${paddle.name} moving: ${oldZ.toFixed(2)} → ${newZ.toFixed(2)} (input: ${inputDirection})`);
+    
+    // Apply hard boundaries - clamp position within bounds (boundaries calculated dynamically)
+    if (newZ > this.paddleBoundaries.maxZ) {
+        paddle.position.z = this.paddleBoundaries.maxZ;
+        console.log(`🚧 ${paddle.name} hit forward boundary at ${this.paddleBoundaries.maxZ}`);
+        // this.playBoundaryHitSound(); // Uncomment when audio is ready
+    } else if (newZ < this.paddleBoundaries.minZ) {
+        paddle.position.z = this.paddleBoundaries.minZ;
+        console.log(`🚧 ${paddle.name} hit backward boundary at ${this.paddleBoundaries.minZ}`);
+        // this.playBoundaryHitSound(); // Uncomment when audio is ready
+    } else {
+        // Normal movement within boundaries
+        paddle.position.z = newZ;
+        console.log(`✅ ${paddle.name} moved to Z: ${newZ.toFixed(2)}`);
+    }
+}
+```
+
+4. AUDIO PLAYBACK WITH COOLDOWN:
+```typescript
+private playBoundaryHitSound(): void {
+    const currentTime = Date.now();
+    
+    // Prevent sound spam by using cooldown
+    if (currentTime - this.lastBoundaryHitTime < this.boundaryHitCooldown) {
+        return;
+    }
+    
+    if (this.boundaryHitSound && this.boundaryHitSound.isReady()) {
+        this.boundaryHitSound.play();
+        this.lastBoundaryHitTime = currentTime;
+        console.log("🔊 Boundary hit sound played");
+    }
+}
+```
+
+5. KEYBOARD INPUT HANDLING:
+```typescript
+private setupPaddleControls(): void {
+    const inputMap: { [key: string]: boolean } = {};
+    
+    // Track key states
+    window.addEventListener('keydown', (event) => {
+        inputMap[event.key.toLowerCase()] = true;
+    });
+    
+    window.addEventListener('keyup', (event) => {
+        inputMap[event.key.toLowerCase()] = false;
+    });
+    
+    // Update paddles each frame
+    this.scene.registerBeforeRender(() => {
+        const leftPaddle = this.scene.getMeshByName('paddleLeft');
+        const rightPaddle = this.scene.getMeshByName('paddleRight');
+        
+        if (leftPaddle) {
+            let leftInput = 0;
+            if (inputMap['a']) leftInput += 1;  // Left on Z-axis
+            if (inputMap['d']) leftInput -= 1;  // Right on Z-axis
+            this.updatePaddlePosition(leftPaddle, leftInput);
+        }
+        
+        if (rightPaddle) {
+            let rightInput = 0;
+            if (inputMap['arrowright']) rightInput += 1;    // Right on Z-axis
+            if (inputMap['arrowleft']) rightInput -= 1;  // Left on Z-axis
+            this.updatePaddlePosition(rightPaddle, rightInput);
+        }
+    });
+}
+```
+
+COMPLETE INTEGRATION STEPS:
+==========================
+
+✅ COMPLETED:
+1. ✅ Dynamic boundary calculation using floor plane bounding box
+2. ✅ Paddle movement system on Z-axis (side-to-side)
+3. ✅ Hard boundary enforcement with exact floor edge limits
+4. ✅ Keyboard controls (A/D for left paddle, Arrow keys for right)
+5. ✅ Debug logging for boundary detection and movement
+6. ✅ Setup runs after GLB loads to ensure paddles exist
+
+🔊 AUDIO INTEGRATION (When ready):
+1. Create /public/audio/paddle/ folder
+2. Download/create boundary_hit.wav sound file
+3. Add Sound import to main.ts
+4. Add audio properties to GLBScene class
+5. Call setupAudio() in constructor
+6. Uncomment playBoundaryHitSound() calls in updatePaddlePosition()
+
+CONTROLS:
+---------
+Left Paddle:  A (left) / D (right)
+Right Paddle: Arrow Left (left) / Arrow Right (right)
+
+DYNAMIC BOUNDARY CALCULATION:
+----------------------------
+The implementation now includes automatic boundary detection based on the floor plane:
+
+```typescript
+private calculateFloorBoundaries(): void {
+    const floorPlane = this.scene.getMeshByName('floorPlane');
+    
+    if (!floorPlane) {
+        console.warn("⚠️ Floor plane not found, using default boundaries");
+        return;
+    }
+
+    console.log("📐 Calculating floor boundaries...");
+    
+    // Force bounding box recalculation to get current world coordinates
+    floorPlane.computeWorldMatrix(true);
+    floorPlane.getBoundingInfo().update(floorPlane.getWorldMatrix());
+    
+    const boundingInfo = floorPlane.getBoundingInfo();
+    const boundingBox = boundingInfo.boundingBox;
+    
+    // Use actual floor dimensions - NO buffer for exact edges
+    this.paddleBoundaries.maxZ = boundingBox.maximumWorld.z; 
+    this.paddleBoundaries.minZ = boundingBox.minimumWorld.z;
+    
+    console.log(`✅ Final paddle boundaries: Z from ${this.paddleBoundaries.minZ.toFixed(2)} to ${this.paddleBoundaries.maxZ.toFixed(2)}`);
+}
+```
+
+CUSTOMIZATION OPTIONS:
+---------------------
+- Adjust moveSpeed for faster/slower movement
+- Boundaries are calculated automatically from floor plane dimensions
+- Modify volume (0.0 to 1.0)
+- Add different sounds for each paddle
+- Add warning sounds when approaching boundaries
+- Adjust boundaryHitCooldown to prevent sound spam
+- Buffer can be added back by modifying the boundary calculation
+
+TESTING:
+--------
+1. Load the game
+2. Move paddles to boundaries using keyboard
+3. Listen for boundary hit sounds
+4. Check browser console for audio loading messages
+5. Verify paddles stop at boundaries
+
+TROUBLESHOOTING:
+---------------
+- If no sound plays: Check browser console for loading errors
+- If sound is too loud/quiet: Adjust volume property
+- If sound plays too often: Increase boundaryHitCooldown
+- If paddles don't move: Check keyboard event listeners
+- Audio files not loading: Verify file paths and formats

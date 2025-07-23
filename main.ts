@@ -20,6 +20,10 @@ import "@babylonjs/loaders/glTF"; // Required for loading .glb/.gltf
 class GLBScene {
     private scene: Scene;
     private engine: Engine;
+    private paddleBoundaries = {
+        maxZ: 10.0,  // Forward boundary (will be calculated)
+        minZ: -10.0  // Backward boundary (will be calculated)
+    };
 
     constructor(private canvas: HTMLCanvasElement) {
         this.engine = new Engine(this.canvas, true);
@@ -143,6 +147,187 @@ class GLBScene {
                 document.getElementById('coordinateDisplay')?.remove();
             }
         }, 3000);
+    }
+
+    private setupPaddleControls(): void {
+        const inputMap: { [key: string]: boolean } = {};
+        
+        // Check if paddles exist
+        const leftPaddle = this.scene.getMeshByName('paddleLeft');
+        const rightPaddle = this.scene.getMeshByName('paddleRight');
+        
+        console.log("🎮 Setting up paddle controls:");
+        console.log("  Left paddle found:", !!leftPaddle);
+        console.log("  Right paddle found:", !!rightPaddle);
+        
+        if (!leftPaddle || !rightPaddle) {
+            console.error("❌ Paddles not found in scene! Available meshes:");
+            this.scene.meshes.forEach(mesh => {
+                console.log(`  - ${mesh.name}`);
+            });
+            return;
+        }
+        
+        // Track key states
+        window.addEventListener('keydown', (event) => {
+            const key = event.key.toLowerCase();
+            inputMap[key] = true;
+            console.log(`🔽 Key pressed: ${key}`);
+        });
+        
+        window.addEventListener('keyup', (event) => {
+            const key = event.key.toLowerCase();
+            inputMap[key] = false;
+            console.log(`🔼 Key released: ${key}`);
+        });
+        
+        // Update paddles each frame
+        this.scene.registerBeforeRender(() => {
+            const leftPaddle = this.scene.getMeshByName('paddleLeft');
+            const rightPaddle = this.scene.getMeshByName('paddleRight');
+            
+            if (leftPaddle) {
+                let leftInput = 0;
+                if (inputMap['a']) leftInput += 1;  // Left on Z-axis
+                if (inputMap['d']) leftInput -= 1;  // Right on Z-axis
+                
+                if (leftInput !== 0) {
+                    console.log(`⬅️ Left paddle input: ${leftInput}`);
+                }
+                this.updatePaddlePosition(leftPaddle, leftInput);
+            }
+            
+            if (rightPaddle) {
+                let rightInput = 0;
+                if (inputMap['arrowright']) rightInput += 1;    // Right on Z-axis
+                if (inputMap['arrowleft']) rightInput -= 1;  // Left on Z-axis
+                
+                if (rightInput !== 0) {
+                    console.log(`➡️ Right paddle input: ${rightInput}`);
+                }
+                this.updatePaddlePosition(rightPaddle, rightInput);
+            }
+        });
+        
+        console.log("🎮 Paddle controls initialized! Use A/D for left, Arrow Left/Right for right");
+    }
+
+    private calculateFloorBoundaries(): void {
+        const floorPlane = this.scene.getMeshByName('floorPlane');
+        
+        if (!floorPlane) {
+            console.warn("⚠️ Floor plane not found, using default boundaries");
+            return;
+        }
+
+        console.log("📐 Calculating floor boundaries using raycasting...");
+        
+        // Get floor plane center position (should be at 0,0,0)
+        const floorCenter = floorPlane.position.clone();
+        
+        // Better approach: Cast rays from high above, downward at expected edge positions
+        const testDistance = 50; // Test points this far from center
+        
+        // Cast downward rays from high above at potential edge positions
+        const forwardTestRay = new Ray(
+            new Vector3(floorCenter.x, floorCenter.y + 10, floorCenter.z + testDistance), // High above, forward position
+            new Vector3(0, -1, 0) // Direction: straight down
+        );
+        
+        const backwardTestRay = new Ray(
+            new Vector3(floorCenter.x, floorCenter.y + 10, floorCenter.z - testDistance), // High above, backward position  
+            new Vector3(0, -1, 0) // Direction: straight down
+        );
+        
+        // Cast rays and find intersections
+        const forwardHit = this.scene.pickWithRay(forwardTestRay);
+        const backwardHit = this.scene.pickWithRay(backwardTestRay);
+        
+        let maxZ = 10.0; // Default fallback
+        let minZ = -10.0; // Default fallback
+        let raycastingWorked = false;
+        
+        if (forwardHit?.hit && forwardHit.pickedMesh === floorPlane && forwardHit.pickedPoint) {
+            maxZ = forwardHit.pickedPoint.z;
+            console.log(`📐 Forward boundary found at Z: ${maxZ.toFixed(2)} via raycasting`);
+            raycastingWorked = true;
+        } else {
+            console.warn("⚠️ Forward raycasting missed - ray may have gone beyond floor");
+        }
+        
+        if (backwardHit?.hit && backwardHit.pickedMesh === floorPlane && backwardHit.pickedPoint) {
+            minZ = backwardHit.pickedPoint.z;
+            console.log(`📐 Backward boundary found at Z: ${minZ.toFixed(2)} via raycasting`);
+            raycastingWorked = true;
+        } else {
+            console.warn("⚠️ Backward raycasting missed - ray may have gone beyond floor");
+        }
+        
+        console.log(`📐 Raycasting success: ${raycastingWorked}`);
+        
+        // Always use bounding box method as primary - more reliable
+        console.log("📐 Using floor plane bounding box method...");
+        
+        // Force bounding box recalculation to get current world coordinates
+        floorPlane.computeWorldMatrix(true);
+        floorPlane.getBoundingInfo().update(floorPlane.getWorldMatrix());
+        
+        const boundingInfo = floorPlane.getBoundingInfo();
+        const boundingBox = boundingInfo.boundingBox;
+        
+        // Use actual floor dimensions - NO buffer for exact edges
+        maxZ = boundingBox.maximumWorld.z; 
+        minZ = boundingBox.minimumWorld.z;
+        
+        console.log(`📐 Floor bounding box Z: ${boundingBox.minimumWorld.z.toFixed(2)} to ${boundingBox.maximumWorld.z.toFixed(2)}`);
+        console.log(`📐 Floor center: (${floorCenter.x.toFixed(2)}, ${floorCenter.y.toFixed(2)}, ${floorCenter.z.toFixed(2)})`);
+        console.log(`📐 Paddle boundaries Z: ${minZ.toFixed(2)} to ${maxZ.toFixed(2)}`);
+        
+        // Add debug info about floor plane
+        console.log(`📐 Floor plane name: ${floorPlane.name}`);
+        console.log(`📐 Floor plane position: (${floorPlane.position.x.toFixed(2)}, ${floorPlane.position.y.toFixed(2)}, ${floorPlane.position.z.toFixed(2)})`);
+        console.log(`📐 Floor plane scaling: (${floorPlane.scaling.x.toFixed(2)}, ${floorPlane.scaling.y.toFixed(2)}, ${floorPlane.scaling.z.toFixed(2)})`);
+        
+        // Test paddle positions to see if they're already at boundaries
+        const leftPaddle = this.scene.getMeshByName('paddleLeft');
+        const rightPaddle = this.scene.getMeshByName('paddleRight');
+        if (leftPaddle) {
+            console.log(`📐 Left paddle current Z: ${leftPaddle.position.z.toFixed(2)}`);
+        }
+        if (rightPaddle) {
+            console.log(`📐 Right paddle current Z: ${rightPaddle.position.z.toFixed(2)}`);
+        }
+        
+        // Update boundaries
+        this.paddleBoundaries.maxZ = maxZ;
+        this.paddleBoundaries.minZ = minZ;
+        
+        console.log(`✅ Final paddle boundaries: Z from ${minZ.toFixed(2)} to ${maxZ.toFixed(2)}`);
+    }
+
+    private updatePaddlePosition(paddle: AbstractMesh, inputDirection: number): void {
+        if (inputDirection === 0) return; // No movement needed
+        
+        const moveSpeed = 0.2; // Adjust speed as needed
+        const oldZ = paddle.position.z;
+        
+        // Calculate new position on Z-axis (side-to-side movement)
+        const newZ = paddle.position.z + (inputDirection * moveSpeed);
+        
+        console.log(`🎯 ${paddle.name} moving: ${oldZ.toFixed(2)} → ${newZ.toFixed(2)} (input: ${inputDirection})`);
+        
+        // Apply hard boundaries - clamp position within bounds
+        if (newZ > this.paddleBoundaries.maxZ) {
+            paddle.position.z = this.paddleBoundaries.maxZ;
+            console.log(`🚧 ${paddle.name} hit forward boundary at ${this.paddleBoundaries.maxZ}`);
+        } else if (newZ < this.paddleBoundaries.minZ) {
+            paddle.position.z = this.paddleBoundaries.minZ;
+            console.log(`🚧 ${paddle.name} hit backward boundary at ${this.paddleBoundaries.minZ}`);
+        } else {
+            // Normal movement within boundaries
+            paddle.position.z = newZ;
+            console.log(`✅ ${paddle.name} moved to Z: ${newZ.toFixed(2)}`);
+        }
     }
     private setupLighting(): void { 
         this.setupStrongLightSystem();
@@ -346,6 +531,12 @@ class GLBScene {
             // Create strong light emission effects for game objects
             this.createStrongLightingForGameObjects();
             
+            // Calculate dynamic boundaries based on floor plane
+            this.calculateFloorBoundaries();
+            
+            // Setup paddle controls after GLB is loaded
+            this.setupPaddleControls();
+            
             // Lock camera to object coordinates
             // this.lockCameraToObjectCoordinates();
             
@@ -366,6 +557,12 @@ class GLBScene {
                 
                 // Create strong light emission effects for game objects
                 this.createStrongLightingForGameObjects();
+                
+                // Calculate dynamic boundaries based on floor plane
+                this.calculateFloorBoundaries();
+                
+                // Setup paddle controls after GLB is loaded
+                this.setupPaddleControls();
                 
                 // Lock camera to object coordinates
                 // this.lockCameraToObjectCoordinates();

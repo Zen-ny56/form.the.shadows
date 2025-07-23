@@ -1,0 +1,137 @@
+PADDLE BOUNDARY HANDLING METHODS
+=====================================
+
+These are different ways to prevent game paddles from moving outside the playing area.
+
+METHOD 1: HARD BOUNDARIES (Clamp)
+---------------------------------
+What it does:
+- Sets absolute limits where the paddle cannot go beyond
+- When paddle tries to move past the boundary, it stops instantly
+- Position gets "clamped" to the maximum allowed value
+- No gradual slowdown or warning
+
+Technical implementation:
+paddle.position.z = Math.max(minZ, Math.min(maxZ, paddle.position.z));
+
+Pros:
+- Simple to implement
+- Predictable behavior
+- No complex calculations needed
+- Works reliably in all situations
+
+Cons:
+- Can feel jarring or sudden to players
+- No warning before hitting the boundary
+- May interrupt smooth gameplay flow
+
+
+METHOD 2: SOFT BOUNDARIES (Elastic/Gradual Slowdown)
+---------------------------------------------------
+What it does:
+- Paddle moves normally in the center area
+- As it approaches boundaries, movement gradually slows down
+- The closer to the edge, the slower it moves
+- Creates a "rubber band" or "elastic" feel
+- Never completely stops, but becomes very slow at edges
+
+Technical implementation:
+const distanceFromCenter = Math.abs(paddle.position.z);
+const slowdownFactor = Math.max(0.1, 1 - (distanceFromCenter / maxDistance));
+paddle.position.z += moveSpeed * slowdownFactor * direction;
+
+Pros:
+- Feels more natural and smooth
+- Gives players warning they're approaching limits
+- Maintains some control even at boundaries
+- More forgiving for beginners
+
+Cons:
+- More complex to implement
+- Can feel "mushy" or unresponsive at edges
+- Players might not understand why movement is slow
+
+
+METHOD 3: BOUNCE BACK
+--------------------
+What it does:
+- When paddle hits the boundary, it bounces back slightly
+- Direction of movement reverses automatically
+- Like hitting a wall and getting pushed back
+- Paddle position gets corrected to stay within bounds
+
+Technical implementation:
+if (paddle.position.z > maxZ || paddle.position.z < minZ) {
+    moveDirection *= -1;
+    paddle.position.z = Math.max(minZ, Math.min(maxZ, paddle.position.z));
+}
+
+Pros:
+- Clear feedback that boundary was hit
+- Physically realistic behavior
+- Helps players learn the boundaries quickly
+
+Cons:
+- Can interfere with intended player movement
+- Might feel frustrating if player keeps bouncing
+- Could cause paddle to move opposite to input
+
+
+METHOD 4: VISUAL/AUDIO FEEDBACK WITH BOUNDARIES
+----------------------------------------------
+What it does:
+- Uses any of the above methods for actual boundary enforcement
+- Adds extra effects when approaching or hitting boundaries
+- Visual cues: paddle changes color, flashes, or glows
+- Audio cues: warning beeps, collision sounds
+- Haptic feedback: controller vibration (if supported)
+
+Technical implementation:
+if (Math.abs(paddle.position.z) > warnDistance) {
+    // Flash paddle color
+    // Play warning sound
+    // Vibrate controller
+}
+
+Pros:
+- Clear communication to player about boundaries
+- Enhances game feel and polish
+- Helps players stay within bounds proactively
+- Can combine with any other method
+
+Cons:
+- Requires additional assets (sounds, effects)
+- More complex to implement
+- Could be distracting if overdone
+
+
+RECOMMENDED COMBINATIONS:
+========================
+
+For Beginners:
+- Soft Boundaries + Visual Feedback
+- Gradual slowdown with color changes as warning
+
+For Competitive Play:
+- Hard Boundaries + Audio Feedback
+- Precise control with clear boundary indication
+
+For Casual/Fun Games:
+- Bounce Back + Visual + Audio Feedback
+- Playful feel with lots of feedback
+
+
+AXIS CORRECTION NOTE:
+====================
+In your current setup:
+- Paddles are positioned on X-axis (left/right of screen)
+- Side-to-side movement should be on Z-axis (forward/backward)
+- Floor plane Y-axis is not relevant for paddle side-to-side movement
+
+Current paddle positions:
+- Left paddle: (-20.28, 1.00, 0.00)
+- Right paddle: (20.28, 1.00, 0.00)
+- Movement should modify the Z coordinate: paddle.position.z
+
+[SPACE FOR YOUR ANALOGIES BELOW]
+===============================
