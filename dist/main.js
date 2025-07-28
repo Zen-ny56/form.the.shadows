@@ -156,9 +156,9 @@ class GLBScene {
             if (leftPaddle) {
                 let leftInput = 0;
                 if (inputMap['a'])
-                    leftInput += 1; // Left on Z-axis
+                    leftInput -= 1; // Left on Z-axis
                 if (inputMap['d'])
-                    leftInput -= 1; // Right on Z-axis
+                    leftInput += 1; // Right on Z-axis
                 if (leftInput !== 0) {
                     console.log(`⬅️ Left paddle input: ${leftInput}`);
                 }
@@ -167,9 +167,9 @@ class GLBScene {
             if (rightPaddle) {
                 let rightInput = 0;
                 if (inputMap['arrowright'])
-                    rightInput += 1; // Right on Z-axis
+                    rightInput -= 1; // Right on Z-axis
                 if (inputMap['arrowleft'])
-                    rightInput -= 1; // Left on Z-axis
+                    rightInput += 1; // Left on Z-axis
                 if (rightInput !== 0) {
                     console.log(`➡️ Right paddle input: ${rightInput}`);
                 }
@@ -276,7 +276,6 @@ class GLBScene {
             // Corner points of current leading face
             new Vector3(paddle.position.x - (paddleWidth / 2) + 0.1, paddle.position.y + (paddleHeight / 2) - 0.1, currentLeadingEdgeZ),
             new Vector3(paddle.position.x + (paddleWidth / 2) - 0.1, paddle.position.y + (paddleHeight / 2) - 0.1, currentLeadingEdgeZ),
-            new Vector3(paddle.position.x - (paddleWidth / 2) + 0.1, paddle.position.y - (paddleHeight / 2) + 0.1, currentLeadingEdgeZ),
             new Vector3(paddle.position.x + (paddleWidth / 2) - 0.1, paddle.position.y - (paddleHeight / 2) + 0.1, currentLeadingEdgeZ)
         ];
         // Ray direction: continue in movement direction from current leading edge
