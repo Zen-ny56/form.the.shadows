@@ -15,11 +15,14 @@ import { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { Color3 } from "@babylonjs/core/Maths/math.color";
+import { ActionManager } from "@babylonjs/core/Actions/actionManager";
+import { ExecuteCodeAction } from "@babylonjs/core/Actions/directActions";
 import "@babylonjs/loaders/glTF"; // Required for loading .glb/.gltf
 
 class GLBScene {
     private scene: Scene;
     private engine: Engine;
+    private cameraLocked: boolean = false;
 
     constructor(private canvas: HTMLCanvasElement) {
         this.engine = new Engine(this.canvas, true);
@@ -38,13 +41,35 @@ class GLBScene {
         });
     }
 
-    private setupCamera(): void {
-        // Initial camera setup - will be repositioned after floor_plane is found
-        const camera = new ArcRotateCamera("camera", -Math.PI / 2, Math.PI / 2.5, 10, Vector3.Zero(), this.scene);
-        camera.attachControl(this.canvas, true);
-        this.scene.activeCamera = camera;
-        
-    }
+private setupCamera(): void {
+    // Create ArcRotateCamera with your desired exact position
+    const camera = new ArcRotateCamera("camera", -1.569, 0.593, 43.461, Vector3.Zero(), this.scene);
+    
+    // Lock the camera - disable all controls
+    camera.attachControl(this.canvas, false); // false = no control attachment
+    
+    // Disable all camera movements
+    camera.inputs.clear(); // Remove all input handlers
+    
+    this.scene.activeCamera = camera;
+    
+    console.log("📷 Camera locked at desired position");
+}
+
+// Alternative: Set specific camera position immediately during setup
+private setCameraToImageOnePosition(): void {
+    const camera = this.scene.activeCamera as ArcRotateCamera;
+    if (!camera) return;
+    
+    // Based on your first image, it looks like you want a more elevated, angled view
+    // Try these values (adjust as needed):
+    camera.setTarget(new Vector3(0, 0, 0));    // Look at center of game area
+    camera.alpha = -Math.PI / 4;               // 45 degrees from side
+    camera.beta = Math.PI / 3;                 // More elevated angle
+    camera.radius = 12;                        // Slightly further back
+    
+    console.log("📷 Camera positioned for Image 1 style view");
+}
 
     private positionObjectsAtCoordinates(): void {
         // Define object positions based on the exact mesh names and coordinates you provided
@@ -169,6 +194,11 @@ class GLBScene {
             const key = event.key.toLowerCase();
             inputMap[key] = true;
             console.log(`🔽 Key pressed: ${key}`);
+            
+            // Handle camera lock toggle
+            if (key === 'l') {
+                this.toggleCameraLock();
+            }
         });
         
         window.addEventListener('keyup', (event) => {
@@ -206,6 +236,45 @@ class GLBScene {
         });
         
         console.log("🎮 Paddle controls initialized! Use A/D for left, Arrow Left/Right for right");
+        console.log("📹 Camera controls: Press 'L' to lock/unlock camera");
+    }
+
+    private toggleCameraLock(): void {
+        const camera = this.scene.activeCamera as ArcRotateCamera;
+        
+        if (!this.cameraLocked) {
+            // Lock camera to ideal 3D viewing angle
+            this.lockCameraToIdealView();
+            this.cameraLocked = true;
+            console.log("📹 Camera LOCKED - Press 'L' to unlock");
+        } else {
+            // Unlock camera - restore controls
+            camera.attachControl(this.canvas, true);
+            this.cameraLocked = false;
+            console.log("📹 Camera UNLOCKED - Press 'L' to lock");
+        }
+    }
+
+    private lockCameraToIdealView(): void {
+        const camera = this.scene.activeCamera as ArcRotateCamera;
+        
+        // Find game center for camera target
+        const gameCenter = new Vector3(0, 0.78, 0); // Center of game area at ball height
+        
+        // Set ideal 3D viewing angle - slightly elevated and angled
+        camera.setTarget(gameCenter);
+        camera.alpha = Math.PI / 2; // 90 degrees - looking across the field
+        camera.beta = Math.PI / 3; // 60 degrees - elevated view for nice 3D perspective
+        camera.radius = 35; // Distance from target - close enough to see action
+        
+        // Disable camera controls when locked
+        camera.detachControl();
+        
+        console.log("📹 Camera locked to ideal 3D view:");
+        console.log(`  Target: (${gameCenter.x}, ${gameCenter.y}, ${gameCenter.z})`);
+        console.log(`  Alpha: ${(camera.alpha * 180 / Math.PI).toFixed(1)}°`);
+        console.log(`  Beta: ${(camera.beta * 180 / Math.PI).toFixed(1)}°`);
+        console.log(`  Distance: ${camera.radius}`);
     }
 
     private createInvisibleWalls(): void {
@@ -348,7 +417,7 @@ private updatePaddlePosition(paddle: AbstractMesh, inputDirection: number): void
     let hitWallName = "";
     
     // Enable ray visualization for debugging
-    this.debugVisualizeRays(rayStartPositions, rayDirection, rayDistance);
+    // this.debugVisualizeRays(rayStartPositions, rayDirection, rayDistance);
     
     // Cast rays from all positions on the leading edge
     rayStartPositions.forEach((rayStart, index) => {
