@@ -20,10 +20,6 @@ import "@babylonjs/loaders/glTF"; // Required for loading .glb/.gltf
 class GLBScene {
     private scene: Scene;
     private engine: Engine;
-    private paddleBoundaries = {
-        maxZ: 10.0,  // Forward boundary (will be calculated)
-        minZ: -10.0  // Backward boundary (will be calculated)
-    };
 
     constructor(private canvas: HTMLCanvasElement) {
         this.engine = new Engine(this.canvas, true);
@@ -212,7 +208,7 @@ class GLBScene {
         console.log("🎮 Paddle controls initialized! Use A/D for left, Arrow Left/Right for right");
     }
 
-    private calculateFloorBoundaries(): void {
+    private createInvisibleWalls(): void {
         const floorPlane = this.scene.getMeshByName('floorPlane');
         
         if (!floorPlane) {
@@ -220,53 +216,7 @@ class GLBScene {
             return;
         }
 
-        console.log("📐 Calculating floor boundaries using raycasting...");
-        
-        // Get floor plane center position (should be at 0,0,0)
-        const floorCenter = floorPlane.position.clone();
-        
-        // Better approach: Cast rays from high above, downward at expected edge positions
-        const testDistance = 50; // Test points this far from center
-        
-        // Cast downward rays from high above at potential edge positions
-        const forwardTestRay = new Ray(
-            new Vector3(floorCenter.x, floorCenter.y + 10, floorCenter.z + testDistance), // High above, forward position
-            new Vector3(0, -1, 0) // Direction: straight down
-        );
-        
-        const backwardTestRay = new Ray(
-            new Vector3(floorCenter.x, floorCenter.y + 10, floorCenter.z - testDistance), // High above, backward position  
-            new Vector3(0, -1, 0) // Direction: straight down
-        );
-        
-        // Cast rays and find intersections
-        const forwardHit = this.scene.pickWithRay(forwardTestRay);
-        const backwardHit = this.scene.pickWithRay(backwardTestRay);
-        
-        let maxZ = 10.0; // Default fallback
-        let minZ = -10.0; // Default fallback
-        let raycastingWorked = false;
-        
-        if (forwardHit?.hit && forwardHit.pickedMesh === floorPlane && forwardHit.pickedPoint) {
-            maxZ = forwardHit.pickedPoint.z;
-            console.log(`📐 Forward boundary found at Z: ${maxZ.toFixed(2)} via raycasting`);
-            raycastingWorked = true;
-        } else {
-            console.warn("⚠️ Forward raycasting missed - ray may have gone beyond floor");
-        }
-        
-        if (backwardHit?.hit && backwardHit.pickedMesh === floorPlane && backwardHit.pickedPoint) {
-            minZ = backwardHit.pickedPoint.z;
-            console.log(`📐 Backward boundary found at Z: ${minZ.toFixed(2)} via raycasting`);
-            raycastingWorked = true;
-        } else {
-            console.warn("⚠️ Backward raycasting missed - ray may have gone beyond floor");
-        }
-        
-        console.log(`📐 Raycasting success: ${raycastingWorked}`);
-        
-        // Always use bounding box method as primary - more reliable
-        console.log("📐 Using floor plane bounding box method...");
+        console.log("🚧 Creating invisible walls at floor edges...");
         
         // Force bounding box recalculation to get current world coordinates
         floorPlane.computeWorldMatrix(true);
@@ -275,61 +225,309 @@ class GLBScene {
         const boundingInfo = floorPlane.getBoundingInfo();
         const boundingBox = boundingInfo.boundingBox;
         
-        // Use actual floor dimensions - NO buffer for exact edges
-        maxZ = boundingBox.maximumWorld.z; 
-        minZ = boundingBox.minimumWorld.z;
+        // Get floor dimensions and position
+        const floorMinZ = boundingBox.minimumWorld.z;
+        const floorMaxZ = boundingBox.maximumWorld.z;
+        const floorMinX = boundingBox.minimumWorld.x;
+        const floorMaxX = boundingBox.maximumWorld.x;
+        const floorY = boundingBox.maximumWorld.y; // Top surface of floor
         
-        console.log(`📐 Floor bounding box Z: ${boundingBox.minimumWorld.z.toFixed(2)} to ${boundingBox.maximumWorld.z.toFixed(2)}`);
-        console.log(`📐 Floor center: (${floorCenter.x.toFixed(2)}, ${floorCenter.y.toFixed(2)}, ${floorCenter.z.toFixed(2)})`);
-        console.log(`📐 Paddle boundaries Z: ${minZ.toFixed(2)} to ${maxZ.toFixed(2)}`);
+        console.log(`🚧 Floor bounds - Z: ${floorMinZ.toFixed(2)} to ${floorMaxZ.toFixed(2)}, X: ${floorMinX.toFixed(2)} to ${floorMaxX.toFixed(2)}`);
         
-        // Add debug info about floor plane
-        console.log(`📐 Floor plane name: ${floorPlane.name}`);
-        console.log(`📐 Floor plane position: (${floorPlane.position.x.toFixed(2)}, ${floorPlane.position.y.toFixed(2)}, ${floorPlane.position.z.toFixed(2)})`);
-        console.log(`📐 Floor plane scaling: (${floorPlane.scaling.x.toFixed(2)}, ${floorPlane.scaling.y.toFixed(2)}, ${floorPlane.scaling.z.toFixed(2)})`);
+        // Wall dimensions
+        const wallHeight = 5.0; // High enough for paddles
+        const wallThickness = 0.1; // Thin walls
+        const wallWidth = Math.abs(floorMaxX - floorMinX) + 2; // Cover full floor width plus buffer
         
-        // Test paddle positions to see if they're already at boundaries
-        const leftPaddle = this.scene.getMeshByName('paddleLeft');
-        const rightPaddle = this.scene.getMeshByName('paddleRight');
-        if (leftPaddle) {
-            console.log(`📐 Left paddle current Z: ${leftPaddle.position.z.toFixed(2)}`);
-        }
-        if (rightPaddle) {
-            console.log(`📐 Right paddle current Z: ${rightPaddle.position.z.toFixed(2)}`);
-        }
+        // Create forward wall (at maxZ edge)
+        const forwardWall = MeshBuilder.CreateBox("forwardWall", {
+            width: wallWidth,
+            height: wallHeight,
+            depth: wallThickness
+        }, this.scene);
         
-        // Update boundaries
-        this.paddleBoundaries.maxZ = maxZ;
-        this.paddleBoundaries.minZ = minZ;
+        // Position at forward edge of floor, snapped to surface
+        forwardWall.position = new Vector3(
+            (floorMinX + floorMaxX) / 2, // Center X
+            floorY + (wallHeight / 2), // Bottom at floor surface
+            floorMaxZ + (wallThickness / 2) // Just outside floor edge
+        );
         
-        console.log(`✅ Final paddle boundaries: Z from ${minZ.toFixed(2)} to ${maxZ.toFixed(2)}`);
+        // Create backward wall (at minZ edge)
+        const backwardWall = MeshBuilder.CreateBox("backwardWall", {
+            width: wallWidth,
+            height: wallHeight,
+            depth: wallThickness
+        }, this.scene);
+        
+        // Position at backward edge of floor, snapped to surface
+        backwardWall.position = new Vector3(
+            (floorMinX + floorMaxX) / 2, // Center X
+            floorY + (wallHeight / 2), // Bottom at floor surface
+            floorMinZ - (wallThickness / 2) // Just outside floor edge
+        );
+        
+        // Make walls invisible but still detectable by raycasting
+        const invisibleMaterial = new StandardMaterial("invisibleWallMaterial", this.scene);
+        invisibleMaterial.alpha = 0.0; // Completely transparent
+        invisibleMaterial.disableLighting = true;
+        
+        forwardWall.material = invisibleMaterial;
+        backwardWall.material = invisibleMaterial;
+        
+        // Make walls pickable for raycasting but not for mouse clicks
+        forwardWall.isPickable = true;
+        backwardWall.isPickable = true;
+        forwardWall.checkCollisions = false;
+        backwardWall.checkCollisions = false;
+        
+        
+        console.log(`🚧 Created invisible walls:`);
+        console.log(`  Forward wall at Z: ${forwardWall.position.z.toFixed(2)} (boundary: ${floorMaxZ.toFixed(2)})`);
+        console.log(`  Backward wall at Z: ${backwardWall.position.z.toFixed(2)} (boundary: ${floorMinZ.toFixed(2)})`);
+        console.log(`✅ Invisible walls created and snapped to floor edges`);
     }
 
-    private updatePaddlePosition(paddle: AbstractMesh, inputDirection: number): void {
-        if (inputDirection === 0) return; // No movement needed
+
+private updatePaddlePosition(paddle: AbstractMesh, inputDirection: number): void {
+    if (inputDirection === 0) return; // No movement needed
+    
+    const moveSpeed = 0.2;
+    const oldZ = paddle.position.z;
+    
+    // Get paddle dimensions first
+    paddle.computeWorldMatrix(true);
+    paddle.getBoundingInfo().update(paddle.getWorldMatrix());
+    const paddleBounds = paddle.getBoundingInfo().boundingBox;
+    
+    // Calculate paddle dimensions
+    const paddleWidth = Math.abs(paddleBounds.maximumWorld.x - paddleBounds.minimumWorld.x);
+    const paddleHeight = Math.abs(paddleBounds.maximumWorld.y - paddleBounds.minimumWorld.y);
+    const paddleDepth = Math.abs(paddleBounds.maximumWorld.z - paddleBounds.minimumWorld.z);
+    
+    // Calculate new intended position
+    const moveDirection = new Vector3(0, 0, inputDirection * moveSpeed);
+    const intendedNewPosition = paddle.position.add(moveDirection);
+    
+    console.log(`🎯 ${paddle.name} attempting move: ${oldZ.toFixed(2)} → ${intendedNewPosition.z.toFixed(2)} (input: ${inputDirection})`);
+    console.log(`📏 Paddle dimensions - Width: ${paddleWidth.toFixed(2)}, Height: ${paddleHeight.toFixed(2)}, Depth: ${paddleDepth.toFixed(2)}`);
+    
+    // Cast rays from CURRENT paddle position, not intended position
+    // This prevents premature collision detection
+    const currentLeadingEdgeZ = inputDirection > 0 ? 
+        paddle.position.z + (paddleDepth / 2) :  // Current front edge
+        paddle.position.z - (paddleDepth / 2);   // Current back edge
         
-        const moveSpeed = 0.2; // Adjust speed as needed
-        const oldZ = paddle.position.z;
+    console.log(`🎯 Casting rays from current leading edge at Z: ${currentLeadingEdgeZ.toFixed(2)}`);
+    
+    // Create ray starting positions at the CURRENT leading edge of the paddle
+    const rayStartPositions = [
+        // Center of current leading edge
+        new Vector3(paddle.position.x, paddle.position.y, currentLeadingEdgeZ),
         
-        // Calculate new position on Z-axis (side-to-side movement)
-        const newZ = paddle.position.z + (inputDirection * moveSpeed);
+        // Left and right edges of paddle at current leading face
+        new Vector3(paddle.position.x - (paddleWidth / 2) + 0.1, paddle.position.y, currentLeadingEdgeZ),
+        new Vector3(paddle.position.x + (paddleWidth / 2) - 0.1, paddle.position.y, currentLeadingEdgeZ),
         
-        console.log(`🎯 ${paddle.name} moving: ${oldZ.toFixed(2)} → ${newZ.toFixed(2)} (input: ${inputDirection})`);
+        // Top and bottom edges at current leading face
+        new Vector3(paddle.position.x, paddle.position.y + (paddleHeight / 2) - 0.1, currentLeadingEdgeZ),
+        new Vector3(paddle.position.x, paddle.position.y - (paddleHeight / 2) + 0.1, currentLeadingEdgeZ),
         
-        // Apply hard boundaries - clamp position within bounds
-        if (newZ > this.paddleBoundaries.maxZ) {
-            paddle.position.z = this.paddleBoundaries.maxZ;
-            console.log(`🚧 ${paddle.name} hit forward boundary at ${this.paddleBoundaries.maxZ}`);
-        } else if (newZ < this.paddleBoundaries.minZ) {
-            paddle.position.z = this.paddleBoundaries.minZ;
-            console.log(`🚧 ${paddle.name} hit backward boundary at ${this.paddleBoundaries.minZ}`);
-        } else {
-            // Normal movement within boundaries
-            paddle.position.z = newZ;
-            console.log(`✅ ${paddle.name} moved to Z: ${newZ.toFixed(2)}`);
+        // Corner points of current leading face
+        new Vector3(paddle.position.x - (paddleWidth / 2) + 0.1, paddle.position.y + (paddleHeight / 2) - 0.1, currentLeadingEdgeZ),
+        new Vector3(paddle.position.x + (paddleWidth / 2) - 0.1, paddle.position.y + (paddleHeight / 2) - 0.1, currentLeadingEdgeZ),
+        new Vector3(paddle.position.x - (paddleWidth / 2) + 0.1, paddle.position.y - (paddleHeight / 2) + 0.1, currentLeadingEdgeZ),
+        new Vector3(paddle.position.x + (paddleWidth / 2) - 0.1, paddle.position.y - (paddleHeight / 2) + 0.1, currentLeadingEdgeZ)
+    ];
+    
+    // Ray direction: continue in movement direction from current leading edge
+    const rayDirection = new Vector3(0, 0, inputDirection).normalize();
+    const rayDistance = moveSpeed + 0.01; // Just slightly more than move distance
+    
+    let collisionDetected = false;
+    let closestDistance = Infinity;
+    let hitWallName = "";
+    
+    // Enable ray visualization for debugging
+    this.debugVisualizeRays(rayStartPositions, rayDirection, rayDistance);
+    
+    // Cast rays from all positions on the leading edge
+    rayStartPositions.forEach((rayStart, index) => {
+        const ray = new Ray(rayStart, rayDirection, rayDistance);
+        const hit = this.scene.pickWithRay(ray);
+        
+        if (hit?.hit && hit.pickedMesh && 
+            (hit.pickedMesh.name === "forwardWall" || hit.pickedMesh.name === "backwardWall")) {
+            
+            collisionDetected = true;
+            if (hit.distance < closestDistance) {
+                closestDistance = hit.distance;
+                hitWallName = hit.pickedMesh.name;
+            }
+            console.log(`🔍 Ray ${index} from leading edge hit ${hit.pickedMesh.name} at distance ${hit.distance.toFixed(3)}`);
+        }
+    });
+    
+    // Alternative approach: Check if the paddle would go beyond floor edges
+    if (!collisionDetected) {
+        // Get floor bounds for precise edge detection
+        const floorPlane = this.scene.getMeshByName('floorPlane');
+        if (floorPlane) {
+            floorPlane.computeWorldMatrix(true);
+            floorPlane.getBoundingInfo().update(floorPlane.getWorldMatrix());
+            const floorBounds = floorPlane.getBoundingInfo().boundingBox;
+            
+            // Calculate where the leading edge WOULD BE after the move
+            const newLeadingEdgeZ = inputDirection > 0 ? 
+                intendedNewPosition.z + (paddleDepth / 2) :  // Moving forward: front edge after move
+                intendedNewPosition.z - (paddleDepth / 2);   // Moving backward: back edge after move
+            
+            // Use minimal buffer - just enough to keep paddle on the floor surface
+            const minimalBuffer = 0.01; // Even smaller buffer for precise edge alignment
+            const maxFloorZ = floorBounds.maximumWorld.z - minimalBuffer;
+            const minFloorZ = floorBounds.minimumWorld.z + minimalBuffer;
+            
+            console.log(`🏢 Floor Z bounds: ${minFloorZ.toFixed(3)} to ${maxFloorZ.toFixed(3)} (buffer: ${minimalBuffer})`);
+            console.log(`🎯 Leading edge would be at: ${newLeadingEdgeZ.toFixed(3)} after move`);
+            
+            // Check if leading edge would go beyond floor boundaries AFTER the move
+            if (inputDirection > 0 && newLeadingEdgeZ > maxFloorZ) {
+                // Moving forward: check if leading edge exceeds floor
+                collisionDetected = true;
+                hitWallName = "forwardWall";
+                console.log(`🚧 ${paddle.name} leading edge would exceed floor: ${newLeadingEdgeZ.toFixed(3)} > ${maxFloorZ.toFixed(3)}`);
+            } else if (inputDirection < 0 && newLeadingEdgeZ < minFloorZ) {
+                // Moving backward: check if leading edge exceeds floor  
+                collisionDetected = true;
+                hitWallName = "backwardWall";
+                console.log(`🚧 ${paddle.name} leading edge would exceed floor: ${newLeadingEdgeZ.toFixed(3)} < ${minFloorZ.toFixed(3)}`);
+            }
         }
     }
-    private setupLighting(): void { 
+    
+    // If still no collision detected, do a final precise boundary check
+    if (!collisionDetected) {
+        const floorPlane = this.scene.getMeshByName('floorPlane');
+        if (floorPlane) {
+            floorPlane.computeWorldMatrix(true);
+            floorPlane.getBoundingInfo().update(floorPlane.getWorldMatrix());
+            const floorBounds = floorPlane.getBoundingInfo().boundingBox;
+            
+            // Check if ANY part of the paddle would go off the floor
+            const paddleBackEdge = inputDirection > 0 ? 
+                intendedNewPosition.z - (paddleDepth / 2) :  // Moving forward: check back edge stays on
+                intendedNewPosition.z + (paddleDepth / 2);   // Moving backward: check back edge stays on
+                
+            const paddleFrontEdge = inputDirection > 0 ? 
+                intendedNewPosition.z + (paddleDepth / 2) :  // Moving forward: check front edge doesn't exceed
+                intendedNewPosition.z - (paddleDepth / 2);   // Moving backward: check front edge doesn't exceed
+            
+            // Ensure entire paddle stays within floor bounds
+            if (paddleFrontEdge > floorBounds.maximumWorld.z || 
+                paddleFrontEdge < floorBounds.minimumWorld.z ||
+                paddleBackEdge > floorBounds.maximumWorld.z || 
+                paddleBackEdge < floorBounds.minimumWorld.z) {
+                
+                collisionDetected = true;
+                hitWallName = inputDirection > 0 ? "forwardWall" : "backwardWall";
+                console.log(`🚧 ${paddle.name} would partially leave floor - front: ${paddleFrontEdge.toFixed(2)}, back: ${paddleBackEdge.toFixed(2)}`);
+                console.log(`🚧 Floor bounds: ${floorBounds.minimumWorld.z.toFixed(2)} to ${floorBounds.maximumWorld.z.toFixed(2)}`);
+            }
+        }
+    }
+    
+    // Apply movement based on collision detection
+    if (collisionDetected) {
+        console.log(`🚧 ${paddle.name} blocked by ${hitWallName} - staying at Z: ${paddle.position.z.toFixed(2)}`);
+        // Don't move - collision detected
+    } else {
+        // Safe to move
+        paddle.position.z = intendedNewPosition.z;
+        console.log(`✅ ${paddle.name} moved safely to Z: ${intendedNewPosition.z.toFixed(2)}`);
+    }
+}
+
+// Enhanced debugging method - visualize rays and boundaries
+private debugVisualizeRays(rayPositions: Vector3[], rayDirection: Vector3, rayDistance: number): void {
+    // Enable this for debugging
+    const DEBUG_RAYS = true;
+    if (!DEBUG_RAYS) return;
+    
+    rayPositions.forEach((start, index) => {
+        const end = start.add(rayDirection.scale(rayDistance));
+        
+        // Create a thin line to visualize the ray
+        const rayLine = MeshBuilder.CreateLines(`debugRay_${index}`, {
+            points: [start, end]
+        }, this.scene);
+        
+        rayLine.color = Color3.Red();
+        
+        // Remove after longer time to see them better
+        setTimeout(() => {
+            rayLine.dispose();
+        }, 2000);
+    });
+    
+    // Also visualize floor boundaries for debugging
+    this.debugVisualizeFloorBounds();
+}
+
+private debugVisualizeFloorBounds(): void {
+    const floorPlane = this.scene.getMeshByName('floorPlane');
+    if (!floorPlane) return;
+    
+    floorPlane.computeWorldMatrix(true);
+    floorPlane.getBoundingInfo().update(floorPlane.getWorldMatrix());
+    const floorBounds = floorPlane.getBoundingInfo().boundingBox;
+    
+    console.log(`🏢 Floor bounds - X: ${floorBounds.minimumWorld.x.toFixed(2)} to ${floorBounds.maximumWorld.x.toFixed(2)}`);
+    console.log(`🏢 Floor bounds - Y: ${floorBounds.minimumWorld.y.toFixed(2)} to ${floorBounds.maximumWorld.y.toFixed(2)}`);
+    console.log(`🏢 Floor bounds - Z: ${floorBounds.minimumWorld.z.toFixed(2)} to ${floorBounds.maximumWorld.z.toFixed(2)}`);
+    
+    // Create visual markers at floor corners for debugging
+    const floorY = floorBounds.maximumWorld.y + 0.1; // Slightly above floor
+    const cornerHeight = 0.5;
+    
+    // Front-left corner
+    const frontLeft = MeshBuilder.CreateBox("debug_frontLeft", {
+        width: 0.1, height: cornerHeight, depth: 0.1
+    }, this.scene);
+    frontLeft.position = new Vector3(floorBounds.minimumWorld.x, floorY + cornerHeight/2, floorBounds.maximumWorld.z);
+    frontLeft.material = new StandardMaterial("debugMat", this.scene);
+    (frontLeft.material as StandardMaterial).diffuseColor = Color3.Yellow();
+    
+    // Front-right corner  
+    const frontRight = MeshBuilder.CreateBox("debug_frontRight", {
+        width: 0.1, height: cornerHeight, depth: 0.1
+    }, this.scene);
+    frontRight.position = new Vector3(floorBounds.maximumWorld.x, floorY + cornerHeight/2, floorBounds.maximumWorld.z);
+    frontRight.material = frontLeft.material;
+    
+    // Back-left corner
+    const backLeft = MeshBuilder.CreateBox("debug_backLeft", {
+        width: 0.1, height: cornerHeight, depth: 0.1
+    }, this.scene);
+    backLeft.position = new Vector3(floorBounds.minimumWorld.x, floorY + cornerHeight/2, floorBounds.minimumWorld.z);
+    backLeft.material = frontLeft.material;
+    
+    // Back-right corner
+    const backRight = MeshBuilder.CreateBox("debug_backRight", {
+        width: 0.1, height: cornerHeight, depth: 0.1
+    }, this.scene);
+    backRight.position = new Vector3(floorBounds.maximumWorld.x, floorY + cornerHeight/2, floorBounds.minimumWorld.z);
+    backRight.material = frontLeft.material;
+    
+    // Remove debug markers after some time
+    setTimeout(() => {
+        frontLeft.dispose();
+        frontRight.dispose();
+        backLeft.dispose();
+        backRight.dispose();
+    }, 5000);
+}
+
+    private setupLighting(): void {
         this.setupStrongLightSystem();
     }
 
@@ -531,8 +729,8 @@ class GLBScene {
             // Create strong light emission effects for game objects
             this.createStrongLightingForGameObjects();
             
-            // Calculate dynamic boundaries based on floor plane
-            this.calculateFloorBoundaries();
+            // Create invisible walls at floor edges
+            this.createInvisibleWalls();
             
             // Setup paddle controls after GLB is loaded
             this.setupPaddleControls();
@@ -558,8 +756,8 @@ class GLBScene {
                 // Create strong light emission effects for game objects
                 this.createStrongLightingForGameObjects();
                 
-                // Calculate dynamic boundaries based on floor plane
-                this.calculateFloorBoundaries();
+                // Create invisible walls at floor edges
+                this.createInvisibleWalls();
                 
                 // Setup paddle controls after GLB is loaded
                 this.setupPaddleControls();
