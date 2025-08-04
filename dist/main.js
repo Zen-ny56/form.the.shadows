@@ -13,14 +13,17 @@ import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { Color3 } from "@babylonjs/core/Maths/math.color";
 import "@babylonjs/loaders/glTF"; // Required for loading .glb/.gltf
+import { GUIManager } from "./gui-manager.js";
 class GLBScene {
     constructor(canvas) {
         this.canvas = canvas;
         this.cameraLocked = false;
         this.ballVelocity = new Vector3(0.3, 0, 0.2); // Ball velocity in X and Z directions
         this.ballSpeed = 0.4; // Base ball speed
+        this.isPaused = false; // Game pause state
         this.engine = new Engine(this.canvas, true);
         this.scene = new Scene(this.engine);
+        this.guiManager = new GUIManager();
         this.setupCamera();
         this.setupLighting();
         this.setupCustomMaterials();
@@ -103,45 +106,27 @@ class GLBScene {
         });
         // Add keyboard shortcut to log all coordinates
         window.addEventListener('keydown', (event) => {
+            // Skip keyboard shortcuts when paused (except escape which is handled elsewhere)
+            if (this.isPaused && event.key !== 'Escape')
+                return;
             if (event.key === 'c' || event.key === 'C') {
                 this.logAllObjectCoordinates();
             }
         });
     }
     displayCoordinateOnPage(meshName, position) {
-        // Remove existing coordinate display
-        const existing = document.getElementById('coordinateDisplay');
-        if (existing)
-            existing.remove();
-        // Create coordinate display element
-        const display = document.createElement('div');
-        display.id = 'coordinateDisplay';
-        display.innerHTML = `
-            <strong>${meshName}</strong><br>
-            X: ${position.x.toFixed(2)}<br>
-            Y: ${position.y.toFixed(2)}<br>
-            Z: ${position.z.toFixed(2)}
-        `;
-        display.style.cssText = `
-            position: fixed;
-            top: 10px;
-            left: 10px;
-            background: rgba(0,0,0,0.8);
-            color: white;
-            padding: 10px;
-            border-radius: 5px;
-            font-family: monospace;
-            font-size: 14px;
-            z-index: 1000;
-            pointer-events: none;
-        `;
-        document.body.appendChild(display);
-        // Auto-remove after 3 seconds
-        setTimeout(() => {
-            if (document.getElementById('coordinateDisplay')) {
-                document.getElementById('coordinateDisplay')?.remove();
-            }
-        }, 3000);
+        this.guiManager.displayCoordinateOnPage(meshName, position);
+    }
+    togglePause() {
+        this.isPaused = !this.isPaused;
+        if (this.isPaused) {
+            this.guiManager.createPauseMenu();
+            console.log("⏸️ Game paused - Press ESC to resume");
+        }
+        else {
+            this.guiManager.removePauseMenu();
+            console.log("▶️ Game resumed");
+        }
     }
     setupPaddleControls() {
         const inputMap = {};
@@ -163,6 +148,11 @@ class GLBScene {
             const key = event.key.toLowerCase();
             inputMap[key] = true;
             console.log(`🔽 Key pressed: ${key}`);
+            // Handle pause toggle with Escape key
+            if (event.key === 'Escape') {
+                this.togglePause();
+                return; // Don't process other inputs when toggling pause
+            }
             // Handle camera lock toggle
             if (key === 'l') {
                 this.toggleCameraLock();
@@ -175,6 +165,9 @@ class GLBScene {
         });
         // Update paddles each frame
         this.scene.registerBeforeRender(() => {
+            // Skip updates if game is paused
+            if (this.isPaused)
+                return;
             const leftPaddle = this.scene.getMeshByName('paddleLeft');
             const rightPaddle = this.scene.getMeshByName('paddleRight');
             if (leftPaddle) {
@@ -694,6 +687,7 @@ class GLBScene {
         });
     }
     dispose() {
+        this.guiManager.dispose();
         this.scene.dispose();
         this.engine.dispose();
     }
@@ -710,6 +704,9 @@ class GLBScene {
         });
     }
     updateBallPhysics() {
+        // Skip ball updates if game is paused
+        if (this.isPaused)
+            return;
         const ball = this.scene.getMeshByName('pongBall');
         if (!ball)
             return;

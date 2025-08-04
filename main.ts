@@ -19,6 +19,7 @@ import { Color3 } from "@babylonjs/core/Maths/math.color";
 import { ActionManager } from "@babylonjs/core/Actions/actionManager";
 import { ExecuteCodeAction } from "@babylonjs/core/Actions/directActions";
 import "@babylonjs/loaders/glTF"; // Required for loading .glb/.gltf
+import { GUIManager } from "./gui-manager.js";
 
 class GLBScene {
     private scene: Scene;
@@ -26,10 +27,13 @@ class GLBScene {
     private cameraLocked: boolean = false;
     private ballVelocity: Vector3 = new Vector3(0.3, 0, 0.2); // Ball velocity in X and Z directions
     private ballSpeed: number = 0.4; // Base ball speed
+    private isPaused: boolean = false; // Game pause state
+    private guiManager: GUIManager; // GUI manager instance
 
     constructor(private canvas: HTMLCanvasElement) {
         this.engine = new Engine(this.canvas, true);
         this.scene = new Scene(this.engine);
+        this.guiManager = new GUIManager();
 
         this.setupCamera();
         this.setupLighting();
@@ -129,6 +133,9 @@ private setCameraToImageOnePosition(): void {
 
         // Add keyboard shortcut to log all coordinates
         window.addEventListener('keydown', (event) => {
+            // Skip keyboard shortcuts when paused (except escape which is handled elsewhere)
+            if (this.isPaused && event.key !== 'Escape') return;
+            
             if (event.key === 'c' || event.key === 'C') {
                 this.logAllObjectCoordinates();
             }
@@ -136,41 +143,19 @@ private setCameraToImageOnePosition(): void {
     }
 
     private displayCoordinateOnPage(meshName: string, position: Vector3): void {
-        // Remove existing coordinate display
-        const existing = document.getElementById('coordinateDisplay');
-        if (existing) existing.remove();
+        this.guiManager.displayCoordinateOnPage(meshName, position);
+    }
 
-        // Create coordinate display element
-        const display = document.createElement('div');
-        display.id = 'coordinateDisplay';
-        display.innerHTML = `
-            <strong>${meshName}</strong><br>
-            X: ${position.x.toFixed(2)}<br>
-            Y: ${position.y.toFixed(2)}<br>
-            Z: ${position.z.toFixed(2)}
-        `;
-        display.style.cssText = `
-            position: fixed;
-            top: 10px;
-            left: 10px;
-            background: rgba(0,0,0,0.8);
-            color: white;
-            padding: 10px;
-            border-radius: 5px;
-            font-family: monospace;
-            font-size: 14px;
-            z-index: 1000;
-            pointer-events: none;
-        `;
+    private togglePause(): void {
+        this.isPaused = !this.isPaused;
         
-        document.body.appendChild(display);
-        
-        // Auto-remove after 3 seconds
-        setTimeout(() => {
-            if (document.getElementById('coordinateDisplay')) {
-                document.getElementById('coordinateDisplay')?.remove();
-            }
-        }, 3000);
+        if (this.isPaused) {
+            this.guiManager.createPauseMenu();
+            console.log("⏸️ Game paused - Press ESC to resume");
+        } else {
+            this.guiManager.removePauseMenu();
+            console.log("▶️ Game resumed");
+        }
     }
 
     private setupPaddleControls(): void {
@@ -198,6 +183,12 @@ private setCameraToImageOnePosition(): void {
             inputMap[key] = true;
             console.log(`🔽 Key pressed: ${key}`);
             
+            // Handle pause toggle with Escape key
+            if (event.key === 'Escape') {
+                this.togglePause();
+                return; // Don't process other inputs when toggling pause
+            }
+            
             // Handle camera lock toggle
             if (key === 'l') {
                 this.toggleCameraLock();
@@ -212,6 +203,9 @@ private setCameraToImageOnePosition(): void {
         
         // Update paddles each frame
         this.scene.registerBeforeRender(() => {
+            // Skip updates if game is paused
+            if (this.isPaused) return;
+            
             const leftPaddle = this.scene.getMeshByName('paddleLeft');
             const rightPaddle = this.scene.getMeshByName('paddleRight');
             
@@ -851,6 +845,7 @@ private debugVisualizeFloorBounds(): void {
     }
 
     public dispose(): void {
+        this.guiManager.dispose();
         this.scene.dispose();
         this.engine.dispose();
     }
@@ -871,6 +866,9 @@ private debugVisualizeFloorBounds(): void {
     }
 
     private updateBallPhysics(): void {
+        // Skip ball updates if game is paused
+        if (this.isPaused) return;
+        
         const ball = this.scene.getMeshByName('pongBall');
         if (!ball) return;
 
