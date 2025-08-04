@@ -17,6 +17,8 @@ class GLBScene {
     constructor(canvas) {
         this.canvas = canvas;
         this.cameraLocked = false;
+        this.ballVelocity = new Vector3(0.3, 0, 0.2); // Ball velocity in X and Z directions
+        this.ballSpeed = 0.4; // Base ball speed
         this.engine = new Engine(this.canvas, true);
         this.scene = new Scene(this.engine);
         this.setupCamera();
@@ -658,6 +660,8 @@ class GLBScene {
             this.createInvisibleWalls();
             // Setup paddle controls after GLB is loaded
             this.setupPaddleControls();
+            // Initialize ball physics system
+            this.initializeBallSystem();
             // Lock camera to object coordinates
             // this.lockCameraToObjectCoordinates();
             // Debug materials to check lighting compatibility
@@ -678,6 +682,8 @@ class GLBScene {
                 this.createInvisibleWalls();
                 // Setup paddle controls after GLB is loaded
                 this.setupPaddleControls();
+                // Initialize ball physics system
+                this.initializeBallSystem();
                 // Lock camera to object coordinates
                 // this.lockCameraToObjectCoordinates();
                 // Debug materials to check lighting compatibility
@@ -690,6 +696,113 @@ class GLBScene {
     dispose() {
         this.scene.dispose();
         this.engine.dispose();
+    }
+    initializeBallSystem() {
+        const ball = this.scene.getMeshByName('pongBall');
+        if (!ball) {
+            console.warn("⚠️ Ball not found in scene");
+            return;
+        }
+        console.log("⚽ Initializing ball physics system");
+        // Start ball movement
+        this.scene.registerBeforeRender(() => {
+            this.updateBallPhysics();
+        });
+    }
+    updateBallPhysics() {
+        const ball = this.scene.getMeshByName('pongBall');
+        if (!ball)
+            return;
+        // Update ball position based on velocity
+        ball.position.addInPlace(this.ballVelocity);
+        // Check collisions and bounce
+        this.checkBallCollisions(ball);
+    }
+    checkBallCollisions(ball) {
+        // Get ball bounds for collision detection
+        ball.computeWorldMatrix(true);
+        ball.getBoundingInfo().update(ball.getWorldMatrix());
+        const ballBounds = ball.getBoundingInfo().boundingBox;
+        const ballRadius = (ballBounds.maximumWorld.x - ballBounds.minimumWorld.x) / 2;
+        // Check collision with floor boundaries (Z-axis walls)
+        const floorPlane = this.scene.getMeshByName('floorPlane');
+        if (floorPlane) {
+            floorPlane.computeWorldMatrix(true);
+            floorPlane.getBoundingInfo().update(floorPlane.getWorldMatrix());
+            const floorBounds = floorPlane.getBoundingInfo().boundingBox;
+            // Ball hits front or back wall (Z boundaries)
+            if (ball.position.z + ballRadius >= floorBounds.maximumWorld.z ||
+                ball.position.z - ballRadius <= floorBounds.minimumWorld.z) {
+                this.ballVelocity.z *= -1; // Reverse Z velocity
+                console.log("⚽ Ball bounced off Z wall");
+            }
+        }
+        // Check collision with paddles (X boundaries and paddle collision)
+        this.checkPaddleCollisions(ball, ballRadius);
+    }
+    checkPaddleCollisions(ball, ballRadius) {
+        const leftPaddle = this.scene.getMeshByName('paddleLeft');
+        const rightPaddle = this.scene.getMeshByName('paddleRight');
+        // Check collision with left paddle
+        if (leftPaddle && this.ballCollidesWithPaddle(ball, leftPaddle, ballRadius)) {
+            this.ballVelocity.x = Math.abs(this.ballVelocity.x); // Ensure ball moves right
+            this.addPaddleInfluence(ball, leftPaddle);
+            console.log("⚽ Ball hit left paddle");
+        }
+        // Check collision with right paddle  
+        if (rightPaddle && this.ballCollidesWithPaddle(ball, rightPaddle, ballRadius)) {
+            this.ballVelocity.x = -Math.abs(this.ballVelocity.x); // Ensure ball moves left
+            this.addPaddleInfluence(ball, rightPaddle);
+            console.log("⚽ Ball hit right paddle");
+        }
+        // Check if ball went past paddles (scoring)
+        if (ball.position.x < -25) {
+            console.log("🎯 Right player scores!");
+            this.resetBall();
+        }
+        else if (ball.position.x > 25) {
+            console.log("🎯 Left player scores!");
+            this.resetBall();
+        }
+    }
+    ballCollidesWithPaddle(ball, paddle, ballRadius) {
+        // Simple collision detection between ball and paddle
+        const ballPos = ball.position;
+        const paddlePos = paddle.position;
+        // Get paddle dimensions
+        paddle.computeWorldMatrix(true);
+        paddle.getBoundingInfo().update(paddle.getWorldMatrix());
+        const paddleBounds = paddle.getBoundingInfo().boundingBox;
+        const paddleWidth = Math.abs(paddleBounds.maximumWorld.x - paddleBounds.minimumWorld.x);
+        const paddleHeight = Math.abs(paddleBounds.maximumWorld.y - paddleBounds.minimumWorld.y);
+        const paddleDepth = Math.abs(paddleBounds.maximumWorld.z - paddleBounds.minimumWorld.z);
+        // Check if ball is within paddle bounds
+        const withinX = Math.abs(ballPos.x - paddlePos.x) < (paddleWidth / 2 + ballRadius);
+        const withinY = Math.abs(ballPos.y - paddlePos.y) < (paddleHeight / 2 + ballRadius);
+        const withinZ = Math.abs(ballPos.z - paddlePos.z) < (paddleDepth / 2 + ballRadius);
+        return withinX && withinY && withinZ;
+    }
+    addPaddleInfluence(ball, paddle) {
+        // Add some randomness and paddle position influence to ball direction
+        const relativeHitPosition = (ball.position.z - paddle.position.z) / 2; // Normalize hit position
+        this.ballVelocity.z = relativeHitPosition * 0.3; // Add influence to Z direction
+        // Slightly increase speed after each paddle hit
+        this.ballVelocity.normalize();
+        this.ballVelocity.scaleInPlace(this.ballSpeed * 1.05);
+        this.ballSpeed = Math.min(this.ballSpeed * 1.02, 0.8); // Cap max speed
+    }
+    resetBall() {
+        const ball = this.scene.getMeshByName('pongBall');
+        if (!ball)
+            return;
+        // Reset ball to center
+        ball.position = new Vector3(0.00, 0.78, 0.00);
+        // Reset velocity with random direction
+        const randomZ = (Math.random() - 0.5) * 0.4;
+        const randomX = Math.random() > 0.5 ? 0.3 : -0.3;
+        this.ballVelocity = new Vector3(randomX, 0, randomZ);
+        this.ballSpeed = 0.4; // Reset speed
+        console.log("⚽ Ball reset to center");
     }
 }
 // ✅ Entry point
