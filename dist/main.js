@@ -633,7 +633,7 @@ class GameStateManager {
     initializeStates() {
         this.states.set('menu', new MenuState(this.systems, this));
         this.states.set('loading', new LoadingState(this.systems, this));
-        this.states.set('countdown', new CountdownState(this.systems, this));
+        // this.states.set('countdown', new CountdownState(this.systems, this));
         this.states.set('playing', new PlayingState(this.systems, this));
         this.states.set('paused', new PausedState(this.systems, this));
         this.states.set('gameOver', new GameOverState(this.systems, this));
@@ -691,35 +691,33 @@ class LoadingState extends GameState {
     exit() { }
     update(deltaTime) { }
 }
-class CountdownState extends GameState {
-    constructor() {
-        super(...arguments);
-        this.countdown = 3;
-        this.timer = 0;
-    }
-    enter() {
-        console.log("⏰ Entered Countdown State");
-        this.countdown = 3;
-        this.timer = 0;
-    }
-    exit() { }
-    update(deltaTime) {
-        this.timer += deltaTime;
-        if (this.timer >= 1000) {
-            this.countdown--;
-            this.timer = 0;
-            console.log(`⏰ Countdown: ${this.countdown}`);
-            if (this.countdown <= 0) {
-                this.stateManager.setState('playing');
-            }
-        }
-    }
-}
+// class CountdownState extends GameState {
+//     private countdown: number = 3;
+//     private timer: number = 0;
+//     enter(): void {
+//         console.log("⏰ Entered Countdown State");
+//         this.countdown = 3;
+//         this.timer = 0;
+//     }
+//     exit(): void {}
+//     update(deltaTime: number): void {
+//         this.timer += deltaTime;
+//         if (this.timer >= 1000) {
+//             this.countdown--;
+//             this.timer = 0;
+//             console.log(`⏰ Countdown: ${this.countdown}`);
+//             if (this.countdown <= 0) {
+//                 this.stateManager.setState('playing');
+//             }
+//         }
+//     }
+// }
 class PlayingState extends GameState {
     enter() {
         console.log("🎮 Entered Playing State");
         // Set up physics system
         this.systems.physicsSystem.setRenderEngine(this.systems.renderEngine);
+        this.countdown();
         this.systems.physicsSystem.startBall();
         this.setupInputHandlers();
     }
@@ -729,6 +727,17 @@ class PlayingState extends GameState {
     }
     update(deltaTime) {
         this.updatePaddleMovement();
+    }
+    countdown() {
+        let countdown = 3;
+        const timer = setInterval(() => {
+            console.log(countdown);
+            countdown--;
+            if (countdown < 0) {
+                clearInterval(timer);
+                console.log("Countdown finished!");
+            }
+        }, 1000);
     }
     setupInputHandlers() {
         this.systems.inputManager.registerHandler(' ', (pressed) => {
