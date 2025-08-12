@@ -1,3 +1,6 @@
+// ===========================================
+//          HEADERS                           
+// ===========================================
 import { Engine } from "@babylonjs/core/Engines/engine";
 import { Scene } from "@babylonjs/core/scene";
 import { SceneLoader } from "@babylonjs/core/Loading/sceneLoader";
@@ -5,7 +8,6 @@ import { ArcRotateCamera } from "@babylonjs/core/Cameras/arcRotateCamera";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { PointLight } from "@babylonjs/core/Lights/pointLight";
 import { ShadowGenerator } from "@babylonjs/core/Lights/Shadows/shadowGenerator";
-import { Ray } from "@babylonjs/core/Culling/ray";
 import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial";
 import "@babylonjs/core/Lights/Shadows/shadowGeneratorSceneComponent";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture";
@@ -13,53 +15,177 @@ import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { Color3 } from "@babylonjs/core/Maths/math.color";
 import "@babylonjs/loaders/glTF"; // Required for loading .glb/.gltf
-import { GUIManager } from "./gui-manager.js";
-class GLBScene {
+// ===========================================
+// *******************************************
+// ===========================================
+// =====================================
+// MAIN GAME MANAGER - Orchestrator
+// =====================================
+class PongGameManager {
+    constructor(canvas) {
+        this.isRunning = false;
+        this.lastTime = 0;
+        // Initialize all systems
+        this.renderEngine = new RenderEngine(canvas); // 🎨 The "visual display" chef
+        this.inputManager = new InputManager(); // 🎮 The "order taker" (keyboard/mouse)
+        this.physicsSystem = new PhysicsSystem(); // ⚡ The "movement & collision" chef
+        this.audioManager = new AudioManager(); // 🔊 The "sound effects" DJ
+        this.uiManager = new UIManager(); // 🖥️ The "menu display" manager
+        this.scoreManager = new ScoreManager(); // 🥅 The "score keeper" manager
+        // Initialize game state manager with references to all systems
+        this.gameState = new GameStateManager({
+            renderEngine: this.renderEngine,
+            inputManager: this.inputManager,
+            physicsSystem: this.physicsSystem,
+            audioManager: this.audioManager,
+            uiManager: this.uiManager,
+            scoreManager: this.scoreManager
+        });
+        this.initialize();
+    }
+    async initialize() {
+        console.log("🎮 Initializing Pong Game Manager...");
+        // Initialize all systems in order
+        await this.renderEngine.initialize();
+        this.inputManager.initialize();
+        this.physicsSystem.initialize();
+        this.audioManager.initialize();
+        this.uiManager.initialize();
+        this.scoreManager.initialize();
+        // Start with menu state
+        this.gameState.setState('menu');
+        this.startGameLoop();
+        console.log("✅ Game Manager initialized successfully!");
+    }
+    startGameLoop() {
+        this.isRunning = true;
+        const gameLoop = (timestamp) => {
+            if (!this.isRunning)
+                return;
+            const deltaTime = timestamp - this.lastTime;
+            this.lastTime = timestamp;
+            // Update all systems
+            this.gameState.update(deltaTime);
+            this.physicsSystem.update(deltaTime);
+            this.renderEngine.update(deltaTime);
+            this.uiManager.update(deltaTime);
+            // Render
+            this.renderEngine.render();
+            this.uiManager.render();
+            requestAnimationFrame(gameLoop);
+        };
+        requestAnimationFrame(gameLoop);
+    }
+    dispose() {
+        this.isRunning = false;
+        this.renderEngine.dispose();
+        this.inputManager.dispose();
+        this.physicsSystem.dispose();
+        this.audioManager.dispose();
+        this.uiManager.dispose();
+    }
+}
+// =====================================
+// RENDER ENGINE - 3D Babylon.js Layer
+// =====================================
+class RenderEngine {
     constructor(canvas) {
         this.canvas = canvas;
-        this.cameraLocked = false;
-        this.ballVelocity = new Vector3(0.3, 0, 0.2); // Ball velocity in X and Z directions
-        this.ballSpeed = 0.4; // Base ball speed
-        this.isPaused = false; // Game pause state
+        this.gameObjects = new Map();
         this.engine = new Engine(this.canvas, true);
         this.scene = new Scene(this.engine);
-        this.guiManager = new GUIManager();
+    }
+    async initialize() {
+        console.log("🎨 Initializing Render Engine...");
         this.setupCamera();
         this.setupLighting();
         this.setupCustomMaterials();
         this.setupResizeListener();
-        this.setupScene();
-    }
-    setupResizeListener() {
-        window.addEventListener("resize", () => {
-            this.engine.resize();
+        await this.loadAssets();
+        // Start render loop
+        this.engine.runRenderLoop(() => {
+            this.scene.render();
         });
+        console.log("✅ Render Engine initialized!");
     }
     setupCamera() {
-        // Create ArcRotateCamera with your desired exact position
-        const camera = new ArcRotateCamera("camera", -1.569, 0.593, 43.461, Vector3.Zero(), this.scene);
+        // Create ArcRotateCamera with desired position
+        this.camera = new ArcRotateCamera("camera", -1.569, 0.593, 43.461, Vector3.Zero(), this.scene);
         // Lock the camera - disable all controls
-        camera.attachControl(this.canvas, false); // false = no control attachment
-        // Disable all camera movements
-        camera.inputs.clear(); // Remove all input handlers
-        this.scene.activeCamera = camera;
+        this.camera.attachControl(this.canvas, false);
+        this.camera.inputs.clear();
+        this.scene.activeCamera = this.camera;
         console.log("📷 Camera locked at desired position");
     }
-    // Alternative: Set specific camera position immediately during setup
-    setCameraToImageOnePosition() {
-        const camera = this.scene.activeCamera;
-        if (!camera)
-            return;
-        // Based on your first image, it looks like you want a more elevated, angled view
-        // Try these values (adjust as needed):
-        camera.setTarget(new Vector3(0, 0, 0)); // Look at center of game area
-        camera.alpha = -Math.PI / 4; // 45 degrees from side
-        camera.beta = Math.PI / 3; // More elevated angle
-        camera.radius = 12; // Slightly further back
-        console.log("📷 Camera positioned for Image 1 style view");
+    setupLighting() {
+        console.log("💡 Setting up lighting system...");
+        // Lighting will be set up after assets are loaded
     }
-    positionObjectsAtCoordinates() {
-        // Define object positions based on the exact mesh names and coordinates you provided
+    setupCustomMaterials() {
+        this.createSkybox();
+    }
+    createSkybox() {
+        const skybox = MeshBuilder.CreateBox("skybox", { size: 1000 }, this.scene);
+        const skyboxMaterial = new StandardMaterial("skyboxMaterial", this.scene);
+        skyboxMaterial.backFaceCulling = false;
+        skyboxMaterial.diffuseTexture = new Texture("public/textures/starfield.png", this.scene);
+        skyboxMaterial.diffuseTexture.wrapU = Texture.CLAMP_ADDRESSMODE;
+        skyboxMaterial.diffuseTexture.wrapV = Texture.CLAMP_ADDRESSMODE;
+        skyboxMaterial.emissiveTexture = skyboxMaterial.diffuseTexture;
+        skyboxMaterial.emissiveColor = new Color3(1.0, 1.0, 1.0);
+        skyboxMaterial.specularColor = new Color3(0, 0, 0);
+        skyboxMaterial.disableLighting = true;
+        skybox.material = skyboxMaterial;
+        skybox.infiniteDistance = true;
+        skybox.parent = this.scene.activeCamera;
+        // Add rotation animation
+        this.scene.registerBeforeRender(() => {
+            skybox.rotation.y += 0.001;
+        });
+    }
+    async loadAssets() {
+        console.log("📦 Loading game assets...");
+        try {
+            const container = await SceneLoader.LoadAssetContainerAsync("/public/models/", "game.glb", this.scene);
+            container.addAllToScene();
+            console.log("📦 Assets loaded successfully");
+            this.initializeGameObjects();
+            this.positionObjects();
+            this.createStrongLightingForGameObjects();
+            this.createInvisibleWalls();
+        }
+        catch (error) {
+            console.log("🔍 Trying alternative path...");
+            try {
+                const container = await SceneLoader.LoadAssetContainerAsync("./public/models/", "game.glb", this.scene);
+                container.addAllToScene();
+                console.log("📦 Assets loaded with alternative path");
+                this.initializeGameObjects();
+                this.positionObjects();
+                this.createStrongLightingForGameObjects();
+                this.createInvisibleWalls();
+            }
+            catch (err2) {
+                console.error("❌ Failed to load assets:", err2);
+            }
+        }
+    }
+    initializeGameObjects() {
+        const leftPaddleMesh = this.scene.getMeshByName('paddleLeft');
+        const rightPaddleMesh = this.scene.getMeshByName('paddleRight');
+        const ballMesh = this.scene.getMeshByName('pongBall');
+        if (leftPaddleMesh) {
+            this.gameObjects.set('leftPaddle', new GameObject3D(leftPaddleMesh, 'paddle'));
+        }
+        if (rightPaddleMesh) {
+            this.gameObjects.set('rightPaddle', new GameObject3D(rightPaddleMesh, 'paddle'));
+        }
+        if (ballMesh) {
+            this.gameObjects.set('ball', new GameObject3D(ballMesh, 'ball'));
+        }
+        console.log(`🎯 Initialized ${this.gameObjects.size} game objects`);
+    }
+    positionObjects() {
         const objectPositions = {
             'paddleLeft': new Vector3(-20.28, 1.00, 0.00),
             'pongBall': new Vector3(0.00, 0.78, 0.00),
@@ -67,7 +193,6 @@ class GLBScene {
             'paddleRight': new Vector3(20.28, 1.00, 0.00),
             'floorPlane': new Vector3(0.00, 0.00, 0.00)
         };
-        // Position each specific mesh by finding it in the scene
         Object.keys(objectPositions).forEach(meshName => {
             const mesh = this.scene.getMeshByName(meshName);
             if (mesh) {
@@ -75,158 +200,84 @@ class GLBScene {
                 mesh.position.copyFrom(pos);
                 console.log(`📍 Positioned ${meshName} at (${pos.x.toFixed(2)}, ${pos.y.toFixed(2)}, ${pos.z.toFixed(2)})`);
             }
+        });
+    }
+    createStrongLightingForGameObjects() {
+        const paddleLeft = this.scene.getMeshByName('paddleLeft');
+        const paddleRight = this.scene.getMeshByName('paddleRight');
+        if (paddleLeft) {
+            this.makePaddleEmitLight(paddleLeft, new Color3(0.2, 0.8, 1.0), 'left');
+        }
+        if (paddleRight) {
+            this.makePaddleEmitLight(paddleRight, new Color3(1.0, 0.4, 0.1), 'right');
+        }
+        console.log("💡 Strong light emission system created for paddles");
+    }
+    makePaddleEmitLight(parentMesh, lightColor, side) {
+        const emissiveMaterial = new PBRMaterial(`${parentMesh.name}_emissive`, this.scene);
+        if (side === 'left') {
+            emissiveMaterial.albedoColor = new Color3(0.05, 0.15, 0.20);
+        }
+        else {
+            emissiveMaterial.albedoColor = new Color3(0.20, 0.08, 0.02);
+        }
+        emissiveMaterial.emissiveColor = lightColor;
+        emissiveMaterial.emissiveIntensity = 2.0;
+        emissiveMaterial.roughness = 0.1;
+        emissiveMaterial.metallicF0Factor = 0.8;
+        parentMesh.material = emissiveMaterial;
+        const lightOffset = new Vector3(0, 0.5, 0);
+        const strongLight = new PointLight(`${parentMesh.name}_strongLight`, parentMesh.position.add(lightOffset), this.scene);
+        strongLight.diffuse = lightColor;
+        strongLight.specular = lightColor;
+        strongLight.intensity = 15.0;
+        strongLight.range = 50.0;
+        strongLight.falloffType = PointLight.FALLOFF_PHYSICAL;
+        strongLight.parent = parentMesh;
+        strongLight.position.copyFrom(lightOffset);
+        const shadowGenerator = new ShadowGenerator(1024, strongLight);
+        shadowGenerator.useBlurExponentialShadowMap = true;
+        shadowGenerator.blurKernel = 4;
+        shadowGenerator.bias = 0.0001;
+        shadowGenerator.setDarkness(0.8);
+        this.scene.meshes.forEach(mesh => {
+            if (mesh.name !== "skybox" && mesh !== parentMesh) {
+                shadowGenerator.addShadowCaster(mesh);
+            }
+        });
+        const floorPlane = this.scene.getMeshByName('floorPlane');
+        if (floorPlane) {
+            floorPlane.receiveShadows = true;
+        }
+        this.createLightBlocker(parentMesh, side);
+    }
+    createLightBlocker(parentMesh, side) {
+        const blockerDistance = 6.0;
+        const blockerPositions = [
+            new Vector3(0, 0, blockerDistance),
+            new Vector3(0, 0, -blockerDistance),
+            new Vector3(side === 'left' ? blockerDistance : -blockerDistance, 0, 0),
+        ];
+        blockerPositions.forEach((offset, index) => {
+            const blocker = MeshBuilder.CreatePlane(`${parentMesh.name}_lightBlocker_${index}`, {
+                size: 15
+            }, this.scene);
+            blocker.position = parentMesh.position.add(offset);
+            const blockerMaterial = new StandardMaterial(`${parentMesh.name}_blockerMaterial_${index}`, this.scene);
+            blockerMaterial.alpha = 0.0;
+            blockerMaterial.disableLighting = true;
+            blocker.material = blockerMaterial;
+            blocker.isPickable = false;
+            blocker.checkCollisions = false;
+            blocker.parent = parentMesh;
+            blocker.position.copyFrom(offset);
+            if (Math.abs(offset.z) > Math.abs(offset.x)) {
+                blocker.rotation.y = offset.z > 0 ? 0 : Math.PI;
+            }
             else {
-                console.warn(`⚠️ Mesh not found in GLB: ${meshName}`);
+                blocker.rotation.y = offset.x > 0 ? -Math.PI / 2 : Math.PI / 2;
             }
         });
-    }
-    // private lockCameraToObjectCoordinates(): void {
-    //     const camera = this.scene.activeCamera as ArcRotateCamera;
-    //     // Lock camera to center of the game area where objects are positioned
-    //     // Objects span from x: -20.28 to 20.28, centered at y: 0.78 (ball height)
-    //     camera.setTarget(new Vector3(0, 0.78, 0)); // Center of the game area
-    //     camera.alpha = Math.PI / 2; // 90 degree rotation to make paddles left/right
-    //     camera.beta = 0; // Top-down view (straight down)
-    //     camera.radius = 43; // Zoomed in closer to the playing field
-    //     // Disable camera controls to lock it in place
-    //     camera.detachControl();
-    //     console.log("📹 Camera locked to top-down view - paddles left/right");
-    //     console.log("📹 Camera target: (0.00, 0.78, 0.00) - Center of game area");
-    // }
-    setupInteractiveCoordinateDisplay() {
-        // Add click event to display object coordinates
-        this.scene.onPointerObservable.add((pointerInfo) => {
-            if (pointerInfo.pickInfo?.hit && pointerInfo.pickInfo.pickedMesh) {
-                const mesh = pointerInfo.pickInfo.pickedMesh;
-                const pos = mesh.position;
-                console.log(`🎯 Clicked: ${mesh.name} at (${pos.x.toFixed(2)}, ${pos.y.toFixed(2)}, ${pos.z.toFixed(2)})`);
-                // Display on webpage
-                this.displayCoordinateOnPage(mesh.name, pos);
-            }
-        });
-        // Add keyboard shortcut to log all coordinates
-        window.addEventListener('keydown', (event) => {
-            // Skip keyboard shortcuts when paused (except escape which is handled elsewhere)
-            if (this.isPaused && event.key !== 'Escape')
-                return;
-            if (event.key === 'c' || event.key === 'C') {
-                this.logAllObjectCoordinates();
-            }
-        });
-    }
-    displayCoordinateOnPage(meshName, position) {
-        this.guiManager.displayCoordinateOnPage(meshName, position);
-    }
-    togglePause() {
-        this.isPaused = !this.isPaused;
-        if (this.isPaused) {
-            this.guiManager.createPauseMenu();
-            console.log("⏸️ Game paused - Press ESC to resume");
-        }
-        else {
-            this.guiManager.removePauseMenu();
-            console.log("▶️ Game resumed");
-        }
-    }
-    setupPaddleControls() {
-        const inputMap = {};
-        // Check if paddles exist
-        const leftPaddle = this.scene.getMeshByName('paddleLeft');
-        const rightPaddle = this.scene.getMeshByName('paddleRight');
-        console.log("🎮 Setting up paddle controls:");
-        console.log("  Left paddle found:", !!leftPaddle);
-        console.log("  Right paddle found:", !!rightPaddle);
-        if (!leftPaddle || !rightPaddle) {
-            console.error("❌ Paddles not found in scene! Available meshes:");
-            this.scene.meshes.forEach(mesh => {
-                console.log(`  - ${mesh.name}`);
-            });
-            return;
-        }
-        // Track key states
-        window.addEventListener('keydown', (event) => {
-            const key = event.key.toLowerCase();
-            inputMap[key] = true;
-            console.log(`🔽 Key pressed: ${key}`);
-            // Handle pause toggle with Escape key
-            if (event.key === 'Escape') {
-                this.togglePause();
-                return; // Don't process other inputs when toggling pause
-            }
-            // Handle camera lock toggle
-            if (key === 'l') {
-                this.toggleCameraLock();
-            }
-        });
-        window.addEventListener('keyup', (event) => {
-            const key = event.key.toLowerCase();
-            inputMap[key] = false;
-            console.log(`🔼 Key released: ${key}`);
-        });
-        // Update paddles each frame
-        this.scene.registerBeforeRender(() => {
-            // Skip updates if game is paused
-            if (this.isPaused)
-                return;
-            const leftPaddle = this.scene.getMeshByName('paddleLeft');
-            const rightPaddle = this.scene.getMeshByName('paddleRight');
-            if (leftPaddle) {
-                let leftInput = 0;
-                if (inputMap['a'])
-                    leftInput -= 1; // Left on Z-axis
-                if (inputMap['d'])
-                    leftInput += 1; // Right on Z-axis
-                if (leftInput !== 0) {
-                    console.log(`⬅️ Left paddle input: ${leftInput}`);
-                }
-                this.updatePaddlePosition(leftPaddle, leftInput);
-            }
-            if (rightPaddle) {
-                let rightInput = 0;
-                if (inputMap['arrowright'])
-                    rightInput -= 1; // Right on Z-axis
-                if (inputMap['arrowleft'])
-                    rightInput += 1; // Left on Z-axis
-                if (rightInput !== 0) {
-                    console.log(`➡️ Right paddle input: ${rightInput}`);
-                }
-                this.updatePaddlePosition(rightPaddle, rightInput);
-            }
-        });
-        console.log("🎮 Paddle controls initialized! Use A/D for left, Arrow Left/Right for right");
-        console.log("📹 Camera controls: Press 'L' to lock/unlock camera");
-    }
-    toggleCameraLock() {
-        const camera = this.scene.activeCamera;
-        if (!this.cameraLocked) {
-            // Lock camera to ideal 3D viewing angle
-            this.lockCameraToIdealView();
-            this.cameraLocked = true;
-            console.log("📹 Camera LOCKED - Press 'L' to unlock");
-        }
-        else {
-            // Unlock camera - restore controls
-            camera.attachControl(this.canvas, true);
-            this.cameraLocked = false;
-            console.log("📹 Camera UNLOCKED - Press 'L' to lock");
-        }
-    }
-    lockCameraToIdealView() {
-        const camera = this.scene.activeCamera;
-        // Find game center for camera target
-        const gameCenter = new Vector3(0, 0.78, 0); // Center of game area at ball height
-        // Set ideal 3D viewing angle - slightly elevated and angled
-        camera.setTarget(gameCenter);
-        camera.alpha = Math.PI / 2; // 90 degrees - looking across the field
-        camera.beta = Math.PI / 3; // 60 degrees - elevated view for nice 3D perspective
-        camera.radius = 35; // Distance from target - close enough to see action
-        // Disable camera controls when locked
-        camera.detachControl();
-        console.log("📹 Camera locked to ideal 3D view:");
-        console.log(`  Target: (${gameCenter.x}, ${gameCenter.y}, ${gameCenter.z})`);
-        console.log(`  Alpha: ${(camera.alpha * 180 / Math.PI).toFixed(1)}°`);
-        console.log(`  Beta: ${(camera.beta * 180 / Math.PI).toFixed(1)}°`);
-        console.log(`  Distance: ${camera.radius}`);
     }
     createInvisibleWalls() {
         const floorPlane = this.scene.getMeshByName('floorPlane');
@@ -234,581 +285,553 @@ class GLBScene {
             console.warn("⚠️ Floor plane not found, using default boundaries");
             return;
         }
-        console.log("🚧 Creating invisible walls at floor edges...");
-        // Force bounding box recalculation to get current world coordinates
         floorPlane.computeWorldMatrix(true);
         floorPlane.getBoundingInfo().update(floorPlane.getWorldMatrix());
-        const boundingInfo = floorPlane.getBoundingInfo();
-        const boundingBox = boundingInfo.boundingBox;
-        // Get floor dimensions and position
+        const boundingBox = floorPlane.getBoundingInfo().boundingBox;
         const floorMinZ = boundingBox.minimumWorld.z;
         const floorMaxZ = boundingBox.maximumWorld.z;
         const floorMinX = boundingBox.minimumWorld.x;
         const floorMaxX = boundingBox.maximumWorld.x;
-        const floorY = boundingBox.maximumWorld.y; // Top surface of floor
-        console.log(`🚧 Floor bounds - Z: ${floorMinZ.toFixed(2)} to ${floorMaxZ.toFixed(2)}, X: ${floorMinX.toFixed(2)} to ${floorMaxX.toFixed(2)}`);
-        // Wall dimensions
-        const wallHeight = 5.0; // High enough for paddles
-        const wallThickness = 0.1; // Thin walls
-        const wallWidth = Math.abs(floorMaxX - floorMinX) + 2; // Cover full floor width plus buffer
-        // Create forward wall (at maxZ edge)
+        const floorY = boundingBox.maximumWorld.y;
+        const wallHeight = 5.0;
+        const wallThickness = 0.1;
+        const wallWidth = Math.abs(floorMaxX - floorMinX) + 2;
+        // Create forward wall
         const forwardWall = MeshBuilder.CreateBox("forwardWall", {
             width: wallWidth,
             height: wallHeight,
             depth: wallThickness
         }, this.scene);
-        // Position at forward edge of floor, snapped to surface
-        forwardWall.position = new Vector3((floorMinX + floorMaxX) / 2, // Center X
-        floorY + (wallHeight / 2), // Bottom at floor surface
-        floorMaxZ + (wallThickness / 2) // Just outside floor edge
-        );
-        // Create backward wall (at minZ edge)
+        forwardWall.position = new Vector3((floorMinX + floorMaxX) / 2, floorY + (wallHeight / 2), floorMaxZ + (wallThickness / 2));
+        // Create backward wall
         const backwardWall = MeshBuilder.CreateBox("backwardWall", {
             width: wallWidth,
             height: wallHeight,
             depth: wallThickness
         }, this.scene);
-        // Position at backward edge of floor, snapped to surface
-        backwardWall.position = new Vector3((floorMinX + floorMaxX) / 2, // Center X
-        floorY + (wallHeight / 2), // Bottom at floor surface
-        floorMinZ - (wallThickness / 2) // Just outside floor edge
-        );
-        // Make walls invisible but still detectable by raycasting
+        backwardWall.position = new Vector3((floorMinX + floorMaxX) / 2, floorY + (wallHeight / 2), floorMinZ - (wallThickness / 2));
         const invisibleMaterial = new StandardMaterial("invisibleWallMaterial", this.scene);
-        invisibleMaterial.alpha = 0.0; // Completely transparent
+        invisibleMaterial.alpha = 0.0;
         invisibleMaterial.disableLighting = true;
         forwardWall.material = invisibleMaterial;
         backwardWall.material = invisibleMaterial;
-        // Make walls pickable for raycasting but not for mouse clicks
         forwardWall.isPickable = true;
         backwardWall.isPickable = true;
         forwardWall.checkCollisions = false;
         backwardWall.checkCollisions = false;
-        console.log(`🚧 Created invisible walls:`);
-        console.log(`  Forward wall at Z: ${forwardWall.position.z.toFixed(2)} (boundary: ${floorMaxZ.toFixed(2)})`);
-        console.log(`  Backward wall at Z: ${backwardWall.position.z.toFixed(2)} (boundary: ${floorMinZ.toFixed(2)})`);
-        console.log(`✅ Invisible walls created and snapped to floor edges`);
+        console.log("🚧 Created invisible walls for collision detection");
     }
-    updatePaddlePosition(paddle, inputDirection) {
-        if (inputDirection === 0)
-            return; // No movement needed
+    setupResizeListener() {
+        window.addEventListener("resize", () => {
+            this.engine.resize();
+        });
+    }
+    getGameObject(name) {
+        return this.gameObjects.get(name);
+    }
+    getMesh(name) {
+        return this.scene.getMeshByName(name);
+    }
+    getScene() {
+        return this.scene;
+    }
+    update(deltaTime) {
+        this.gameObjects.forEach(obj => obj.update(deltaTime));
+    }
+    render() {
+        // Rendering is handled by the engine's render loop
+    }
+    dispose() {
+        this.scene.dispose();
+        this.engine.dispose();
+    }
+}
+// =====================================
+// GAME OBJECT 3D WRAPPER
+// =====================================
+class GameObject3D {
+    constructor(mesh, type) {
+        this.mesh = mesh;
+        this.type = type;
+    }
+    get position() {
+        return this.mesh.position;
+    }
+    set position(pos) {
+        this.mesh.position.copyFrom(pos);
+    }
+    getBounds() {
+        this.mesh.computeWorldMatrix(true);
+        this.mesh.getBoundingInfo().update(this.mesh.getWorldMatrix());
+        return this.mesh.getBoundingInfo().boundingBox;
+    }
+    update(deltaTime) {
+        // Any per-frame updates for this object
+    }
+}
+// =====================================
+// PHYSICS SYSTEM
+// =====================================
+class PhysicsSystem {
+    constructor() {
+        this.ballVelocity = Vector3.Zero();
+        this.ballSpeed = 0.3;
+        this.ballActive = false;
+        this.renderEngine = null;
+    }
+    initialize() {
+        console.log("⚡ Physics system initialized");
+    }
+    setRenderEngine(renderEngine) {
+        this.renderEngine = renderEngine;
+    }
+    startBall() {
+        if (!this.renderEngine)
+            return;
+        this.resetBallPosition();
+        this.startBallMovement();
+        this.ballActive = true;
+        console.log("🏐 Ball movement started");
+    }
+    stopBall() {
+        this.ballActive = false;
+        console.log("🏐 Ball movement stopped");
+    }
+    resetBallPosition() {
+        if (!this.renderEngine)
+            return;
+        const ball = this.renderEngine.getMesh('pongBall');
+        if (ball) {
+            ball.position = new Vector3(0.00, 0.78, 0.00);
+        }
+    }
+    startBallMovement() {
+        const angleRange = Math.PI / 3;
+        const randomAngle = (Math.random() - 0.5) * angleRange;
+        const direction = Math.random() < 0.5 ? 1 : -1;
+        this.ballVelocity = new Vector3(direction * this.ballSpeed * Math.cos(randomAngle), 0, this.ballSpeed * Math.sin(randomAngle));
+    }
+    updatePaddlePosition(paddleName, inputDirection) {
+        if (!this.renderEngine || inputDirection === 0)
+            return;
+        const paddle = this.renderEngine.getMesh(paddleName);
+        if (!paddle)
+            return;
         const moveSpeed = 0.2;
-        const oldZ = paddle.position.z;
-        // Get paddle dimensions first
+        const intendedNewPosition = paddle.position.add(new Vector3(0, 0, inputDirection * moveSpeed));
+        // Collision detection logic (simplified from your original)
+        if (this.canPaddleMoveTo(paddle, intendedNewPosition)) {
+            paddle.position.z = intendedNewPosition.z;
+        }
+    }
+    canPaddleMoveTo(paddle, newPosition) {
+        if (!this.renderEngine)
+            return false;
+        const floorPlane = this.renderEngine.getMesh('floorPlane');
+        if (!floorPlane)
+            return true;
+        floorPlane.computeWorldMatrix(true);
+        floorPlane.getBoundingInfo().update(floorPlane.getWorldMatrix());
+        const floorBounds = floorPlane.getBoundingInfo().boundingBox;
         paddle.computeWorldMatrix(true);
         paddle.getBoundingInfo().update(paddle.getWorldMatrix());
         const paddleBounds = paddle.getBoundingInfo().boundingBox;
-        // Calculate paddle dimensions
-        const paddleWidth = Math.abs(paddleBounds.maximumWorld.x - paddleBounds.minimumWorld.x);
-        const paddleHeight = Math.abs(paddleBounds.maximumWorld.y - paddleBounds.minimumWorld.y);
         const paddleDepth = Math.abs(paddleBounds.maximumWorld.z - paddleBounds.minimumWorld.z);
-        // Calculate new intended position
-        const moveDirection = new Vector3(0, 0, inputDirection * moveSpeed);
-        const intendedNewPosition = paddle.position.add(moveDirection);
-        console.log(`🎯 ${paddle.name} attempting move: ${oldZ.toFixed(2)} → ${intendedNewPosition.z.toFixed(2)} (input: ${inputDirection})`);
-        console.log(`📏 Paddle dimensions - Width: ${paddleWidth.toFixed(2)}, Height: ${paddleHeight.toFixed(2)}, Depth: ${paddleDepth.toFixed(2)}`);
-        // Cast rays from CURRENT paddle position, not intended position
-        // This prevents premature collision detection
-        const currentLeadingEdgeZ = inputDirection > 0 ?
-            paddle.position.z + (paddleDepth / 2) : // Current front edge
-            paddle.position.z - (paddleDepth / 2); // Current back edge
-        console.log(`🎯 Casting rays from current leading edge at Z: ${currentLeadingEdgeZ.toFixed(2)}`);
-        // Create ray starting positions at the CURRENT leading edge of the paddle
-        const rayStartPositions = [
-            // Center of current leading edge
-            new Vector3(paddle.position.x, paddle.position.y, currentLeadingEdgeZ),
-            // Left and right edges of paddle at current leading face
-            new Vector3(paddle.position.x - (paddleWidth / 2) + 0.1, paddle.position.y, currentLeadingEdgeZ),
-            new Vector3(paddle.position.x + (paddleWidth / 2) - 0.1, paddle.position.y, currentLeadingEdgeZ),
-            // Top and bottom edges at current leading face
-            new Vector3(paddle.position.x, paddle.position.y + (paddleHeight / 2) - 0.1, currentLeadingEdgeZ),
-            new Vector3(paddle.position.x, paddle.position.y - (paddleHeight / 2) + 0.1, currentLeadingEdgeZ),
-            // Corner points of current leading face
-            new Vector3(paddle.position.x - (paddleWidth / 2) + 0.1, paddle.position.y + (paddleHeight / 2) - 0.1, currentLeadingEdgeZ),
-            new Vector3(paddle.position.x + (paddleWidth / 2) - 0.1, paddle.position.y + (paddleHeight / 2) - 0.1, currentLeadingEdgeZ),
-            new Vector3(paddle.position.x + (paddleWidth / 2) - 0.1, paddle.position.y - (paddleHeight / 2) + 0.1, currentLeadingEdgeZ)
-        ];
-        // Ray direction: continue in movement direction from current leading edge
-        const rayDirection = new Vector3(0, 0, inputDirection).normalize();
-        const rayDistance = moveSpeed + 0.01; // Just slightly more than move distance
-        let collisionDetected = false;
-        let closestDistance = Infinity;
-        let hitWallName = "";
-        // Enable ray visualization for debugging
-        // this.debugVisualizeRays(rayStartPositions, rayDirection, rayDistance);
-        // Cast rays from all positions on the leading edge
-        rayStartPositions.forEach((rayStart, index) => {
-            const ray = new Ray(rayStart, rayDirection, rayDistance);
-            const hit = this.scene.pickWithRay(ray);
-            if (hit?.hit && hit.pickedMesh &&
-                (hit.pickedMesh.name === "forwardWall" || hit.pickedMesh.name === "backwardWall")) {
-                collisionDetected = true;
-                if (hit.distance < closestDistance) {
-                    closestDistance = hit.distance;
-                    hitWallName = hit.pickedMesh.name;
-                }
-                console.log(`🔍 Ray ${index} from leading edge hit ${hit.pickedMesh.name} at distance ${hit.distance.toFixed(3)}`);
-            }
-        });
-        // Alternative approach: Check if the paddle would go beyond floor edges
-        if (!collisionDetected) {
-            // Get floor bounds for precise edge detection
-            const floorPlane = this.scene.getMeshByName('floorPlane');
-            if (floorPlane) {
-                floorPlane.computeWorldMatrix(true);
-                floorPlane.getBoundingInfo().update(floorPlane.getWorldMatrix());
-                const floorBounds = floorPlane.getBoundingInfo().boundingBox;
-                // Calculate where the leading edge WOULD BE after the move
-                const newLeadingEdgeZ = inputDirection > 0 ?
-                    intendedNewPosition.z + (paddleDepth / 2) : // Moving forward: front edge after move
-                    intendedNewPosition.z - (paddleDepth / 2); // Moving backward: back edge after move
-                // Use minimal buffer - just enough to keep paddle on the floor surface
-                const minimalBuffer = 0.01; // Even smaller buffer for precise edge alignment
-                const maxFloorZ = floorBounds.maximumWorld.z - minimalBuffer;
-                const minFloorZ = floorBounds.minimumWorld.z + minimalBuffer;
-                console.log(`🏢 Floor Z bounds: ${minFloorZ.toFixed(3)} to ${maxFloorZ.toFixed(3)} (buffer: ${minimalBuffer})`);
-                console.log(`🎯 Leading edge would be at: ${newLeadingEdgeZ.toFixed(3)} after move`);
-                // Check if leading edge would go beyond floor boundaries AFTER the move
-                if (inputDirection > 0 && newLeadingEdgeZ > maxFloorZ) {
-                    // Moving forward: check if leading edge exceeds floor
-                    collisionDetected = true;
-                    hitWallName = "forwardWall";
-                    console.log(`🚧 ${paddle.name} leading edge would exceed floor: ${newLeadingEdgeZ.toFixed(3)} > ${maxFloorZ.toFixed(3)}`);
-                }
-                else if (inputDirection < 0 && newLeadingEdgeZ < minFloorZ) {
-                    // Moving backward: check if leading edge exceeds floor  
-                    collisionDetected = true;
-                    hitWallName = "backwardWall";
-                    console.log(`🚧 ${paddle.name} leading edge would exceed floor: ${newLeadingEdgeZ.toFixed(3)} < ${minFloorZ.toFixed(3)}`);
-                }
-            }
-        }
-        // If still no collision detected, do a final precise boundary check
-        if (!collisionDetected) {
-            const floorPlane = this.scene.getMeshByName('floorPlane');
-            if (floorPlane) {
-                floorPlane.computeWorldMatrix(true);
-                floorPlane.getBoundingInfo().update(floorPlane.getWorldMatrix());
-                const floorBounds = floorPlane.getBoundingInfo().boundingBox;
-                // Check if ANY part of the paddle would go off the floor
-                const paddleBackEdge = inputDirection > 0 ?
-                    intendedNewPosition.z - (paddleDepth / 2) : // Moving forward: check back edge stays on
-                    intendedNewPosition.z + (paddleDepth / 2); // Moving backward: check back edge stays on
-                const paddleFrontEdge = inputDirection > 0 ?
-                    intendedNewPosition.z + (paddleDepth / 2) : // Moving forward: check front edge doesn't exceed
-                    intendedNewPosition.z - (paddleDepth / 2); // Moving backward: check front edge doesn't exceed
-                // Ensure entire paddle stays within floor bounds
-                if (paddleFrontEdge > floorBounds.maximumWorld.z ||
-                    paddleFrontEdge < floorBounds.minimumWorld.z ||
-                    paddleBackEdge > floorBounds.maximumWorld.z ||
-                    paddleBackEdge < floorBounds.minimumWorld.z) {
-                    collisionDetected = true;
-                    hitWallName = inputDirection > 0 ? "forwardWall" : "backwardWall";
-                    console.log(`🚧 ${paddle.name} would partially leave floor - front: ${paddleFrontEdge.toFixed(2)}, back: ${paddleBackEdge.toFixed(2)}`);
-                    console.log(`🚧 Floor bounds: ${floorBounds.minimumWorld.z.toFixed(2)} to ${floorBounds.maximumWorld.z.toFixed(2)}`);
-                }
-            }
-        }
-        // Apply movement based on collision detection
-        if (collisionDetected) {
-            console.log(`🚧 ${paddle.name} blocked by ${hitWallName} - staying at Z: ${paddle.position.z.toFixed(2)}`);
-            // Don't move - collision detected
-        }
-        else {
-            // Safe to move
-            paddle.position.z = intendedNewPosition.z;
-            console.log(`✅ ${paddle.name} moved safely to Z: ${intendedNewPosition.z.toFixed(2)}`);
-        }
+        const frontEdge = newPosition.z + (paddleDepth / 2);
+        const backEdge = newPosition.z - (paddleDepth / 2);
+        return frontEdge <= floorBounds.maximumWorld.z &&
+            backEdge >= floorBounds.minimumWorld.z;
     }
-    // Enhanced debugging method - visualize rays and boundaries
-    debugVisualizeRays(rayPositions, rayDirection, rayDistance) {
-        // Enable this for debugging
-        const DEBUG_RAYS = true;
-        if (!DEBUG_RAYS)
+    update(deltaTime) {
+        if (!this.ballActive || !this.renderEngine)
             return;
-        rayPositions.forEach((start, index) => {
-            const end = start.add(rayDirection.scale(rayDistance));
-            // Create a thin line to visualize the ray
-            const rayLine = MeshBuilder.CreateLines(`debugRay_${index}`, {
-                points: [start, end]
-            }, this.scene);
-            rayLine.color = Color3.Red();
-            // Remove after longer time to see them better
-            setTimeout(() => {
-                rayLine.dispose();
-            }, 2000);
-        });
-        // Also visualize floor boundaries for debugging
-        this.debugVisualizeFloorBounds();
+        this.updateBallPosition(deltaTime);
     }
-    debugVisualizeFloorBounds() {
-        const floorPlane = this.scene.getMeshByName('floorPlane');
+    updateBallPosition(deltaTime) {
+        if (!this.renderEngine)
+            return;
+        const ball = this.renderEngine.getMesh('pongBall');
+        if (!ball)
+            return;
+        // Move ball
+        const movement = this.ballVelocity.scale(deltaTime / 1000);
+        ball.position.addInPlace(movement);
+        // Check collisions
+        this.checkBallCollisions(ball);
+    }
+    checkBallCollisions(ball) {
+        this.checkWallCollisions(ball);
+        this.checkPaddleCollisions(ball);
+    }
+    checkWallCollisions(ball) {
+        if (!this.renderEngine)
+            return;
+        const floorPlane = this.renderEngine.getMesh('floorPlane');
         if (!floorPlane)
             return;
         floorPlane.computeWorldMatrix(true);
         floorPlane.getBoundingInfo().update(floorPlane.getWorldMatrix());
         const floorBounds = floorPlane.getBoundingInfo().boundingBox;
-        console.log(`🏢 Floor bounds - X: ${floorBounds.minimumWorld.x.toFixed(2)} to ${floorBounds.maximumWorld.x.toFixed(2)}`);
-        console.log(`🏢 Floor bounds - Y: ${floorBounds.minimumWorld.y.toFixed(2)} to ${floorBounds.maximumWorld.y.toFixed(2)}`);
-        console.log(`🏢 Floor bounds - Z: ${floorBounds.minimumWorld.z.toFixed(2)} to ${floorBounds.maximumWorld.z.toFixed(2)}`);
-        // Create visual markers at floor corners for debugging
-        const floorY = floorBounds.maximumWorld.y + 0.1; // Slightly above floor
-        const cornerHeight = 0.5;
-        // Front-left corner
-        const frontLeft = MeshBuilder.CreateBox("debug_frontLeft", {
-            width: 0.1, height: cornerHeight, depth: 0.1
-        }, this.scene);
-        frontLeft.position = new Vector3(floorBounds.minimumWorld.x, floorY + cornerHeight / 2, floorBounds.maximumWorld.z);
-        frontLeft.material = new StandardMaterial("debugMat", this.scene);
-        frontLeft.material.diffuseColor = Color3.Yellow();
-        // Front-right corner  
-        const frontRight = MeshBuilder.CreateBox("debug_frontRight", {
-            width: 0.1, height: cornerHeight, depth: 0.1
-        }, this.scene);
-        frontRight.position = new Vector3(floorBounds.maximumWorld.x, floorY + cornerHeight / 2, floorBounds.maximumWorld.z);
-        frontRight.material = frontLeft.material;
-        // Back-left corner
-        const backLeft = MeshBuilder.CreateBox("debug_backLeft", {
-            width: 0.1, height: cornerHeight, depth: 0.1
-        }, this.scene);
-        backLeft.position = new Vector3(floorBounds.minimumWorld.x, floorY + cornerHeight / 2, floorBounds.minimumWorld.z);
-        backLeft.material = frontLeft.material;
-        // Back-right corner
-        const backRight = MeshBuilder.CreateBox("debug_backRight", {
-            width: 0.1, height: cornerHeight, depth: 0.1
-        }, this.scene);
-        backRight.position = new Vector3(floorBounds.maximumWorld.x, floorY + cornerHeight / 2, floorBounds.minimumWorld.z);
-        backRight.material = frontLeft.material;
-        // Remove debug markers after some time
-        setTimeout(() => {
-            frontLeft.dispose();
-            frontRight.dispose();
-            backLeft.dispose();
-            backRight.dispose();
-        }, 5000);
-    }
-    setupLighting() {
-        this.setupStrongLightSystem();
-    }
-    setupStrongLightSystem() {
-        // We'll create strong emissive lighting after the GLB is loaded
-        console.log("💡 Preparing strong light emission system with shadows");
-    }
-    makePaddleEmitLight(parentMesh, lightColor, side) {
-        // First, make the paddle itself emit light visually
-        const emissiveMaterial = new PBRMaterial(`${parentMesh.name}_emissive`, this.scene);
-        // Set base color to match the light emission for better color harmony
-        if (side === 'left') {
-            emissiveMaterial.albedoColor = new Color3(0.05, 0.15, 0.20); // Dark cyan-blue base
+        const ballRadius = 0.39;
+        if (ball.position.z + ballRadius >= floorBounds.maximumWorld.z) {
+            this.ballVelocity.z = -Math.abs(this.ballVelocity.z);
+            ball.position.z = floorBounds.maximumWorld.z - ballRadius;
         }
-        else {
-            emissiveMaterial.albedoColor = new Color3(0.20, 0.08, 0.02); // Dark orange-red base
+        if (ball.position.z - ballRadius <= floorBounds.minimumWorld.z) {
+            this.ballVelocity.z = Math.abs(this.ballVelocity.z);
+            ball.position.z = floorBounds.minimumWorld.z + ballRadius;
         }
-        emissiveMaterial.emissiveColor = lightColor;
-        emissiveMaterial.emissiveIntensity = 2.0; // Strong emissive glow
-        emissiveMaterial.roughness = 0.1;
-        emissiveMaterial.metallicF0Factor = 0.8;
-        // Apply the emissive material to make paddle glow
-        parentMesh.material = emissiveMaterial;
-        // Create a very strong point light for dramatic shadows
-        const lightOffset = new Vector3(0, 0.5, 0); // Position above paddle center
-        const strongLight = new PointLight(`${parentMesh.name}_strongLight`, parentMesh.position.add(lightOffset), this.scene);
-        // VERY strong intensity for dramatic effect
-        strongLight.diffuse = lightColor;
-        strongLight.specular = lightColor;
-        strongLight.intensity = 15.0; // Very high intensity
-        strongLight.range = 50.0; // Large range, we'll block it with invisible objects
-        strongLight.falloffType = PointLight.FALLOFF_PHYSICAL; // Realistic falloff
-        // Parent the light to the paddle
-        strongLight.parent = parentMesh;
-        strongLight.position.copyFrom(lightOffset);
-        // Create shadow generator for dramatic shadows
-        const shadowGenerator = new ShadowGenerator(1024, strongLight);
-        shadowGenerator.useBlurExponentialShadowMap = true;
-        shadowGenerator.blurKernel = 4;
-        shadowGenerator.bias = 0.0001;
-        shadowGenerator.setDarkness(0.8); // Very dark shadows
-        // Add all meshes as shadow casters
-        this.scene.meshes.forEach(mesh => {
-            if (mesh.name !== "skybox" && mesh !== parentMesh) {
-                shadowGenerator.addShadowCaster(mesh);
-            }
-        });
-        // Enable the floor to receive shadows
-        const floorPlane = this.scene.getMeshByName('floorPlane');
-        if (floorPlane) {
-            floorPlane.receiveShadows = true;
-        }
-        // Create invisible light blocker
-        this.createLightBlocker(parentMesh, side);
-        console.log(`💡 Created strong light emission for ${parentMesh.name} (${side} side)`);
     }
-    createLightBlocker(parentMesh, side) {
-        // Create invisible planes that block light from traveling too far
-        const blockerDistance = 6.0; // Distance from paddle where we block light
-        // Create multiple blocker planes around the paddle
-        const blockerPositions = [
-            new Vector3(0, 0, blockerDistance), // Front blocker
-            new Vector3(0, 0, -blockerDistance), // Back blocker
-            new Vector3(side === 'left' ? blockerDistance : -blockerDistance, 0, 0), // Side blocker
-        ];
-        blockerPositions.forEach((offset, index) => {
-            const blocker = MeshBuilder.CreatePlane(`${parentMesh.name}_lightBlocker_${index}`, {
-                size: 15
-            }, this.scene);
-            // Position the blocker
-            blocker.position = parentMesh.position.add(offset);
-            // Make it invisible but still block light
-            const blockerMaterial = new StandardMaterial(`${parentMesh.name}_blockerMaterial_${index}`, this.scene);
-            blockerMaterial.alpha = 0.0; // Completely transparent
-            blockerMaterial.disableLighting = true;
-            blocker.material = blockerMaterial;
-            // Make it non-interactive for gameplay
-            blocker.isPickable = false;
-            blocker.checkCollisions = false;
-            // Parent to paddle so it moves with it
-            blocker.parent = parentMesh;
-            blocker.position.copyFrom(offset);
-            // Orient the blocker correctly
-            if (Math.abs(offset.z) > Math.abs(offset.x)) {
-                // Front/back blocker - face the paddle
-                blocker.rotation.y = offset.z > 0 ? 0 : Math.PI;
-            }
-            else {
-                // Side blocker - face inward
-                blocker.rotation.y = offset.x > 0 ? -Math.PI / 2 : Math.PI / 2;
-            }
-        });
-        console.log(`🚧 Created light blockers for ${parentMesh.name}`);
-    }
-    createStrongLightingForGameObjects() {
-        // Create strong light emission for paddles only
-        const paddleLeft = this.scene.getMeshByName('paddleLeft');
-        const paddleRight = this.scene.getMeshByName('paddleRight');
-        if (paddleLeft) {
-            // Left paddle gets bright cyan-blue emission
-            this.makePaddleEmitLight(paddleLeft, new Color3(0.2, 0.8, 1.0), 'left');
-        }
-        if (paddleRight) {
-            // Right paddle gets bright orange-red emission
-            this.makePaddleEmitLight(paddleRight, new Color3(1.0, 0.4, 0.1), 'right');
-        }
-        console.log("💡 Strong light emission system created for paddles");
-    }
-    logAllObjectCoordinates() {
-        console.log("📍 All Object Coordinates:");
-        this.scene.meshes.forEach(mesh => {
-            if (mesh.name !== "skybox" && !mesh.name.includes("_shadow")) {
-                const pos = mesh.position;
-                console.log(`  ${mesh.name}: (${pos.x.toFixed(2)}, ${pos.y.toFixed(2)}, ${pos.z.toFixed(2)})`);
-            }
-        });
-    }
-    setupCustomMaterials() {
-        this.createBackgroundLayers();
-    }
-    createBackgroundLayers() {
-        this.createSkybox();
-    }
-    createSkybox() {
-        // Create a large cube that surrounds the entire scene - better for rectangular textures
-        const skybox = MeshBuilder.CreateBox("skybox", { size: 1000 }, this.scene);
-        // Create skybox material
-        const skyboxMaterial = new StandardMaterial("skyboxMaterial", this.scene);
-        skyboxMaterial.backFaceCulling = false; // Render inside faces
-        // Use diffuse texture instead of reflection for proper UV mapping
-        skyboxMaterial.diffuseTexture = new Texture("public/textures/starfield.png", this.scene);
-        skyboxMaterial.diffuseTexture.wrapU = Texture.CLAMP_ADDRESSMODE;
-        skyboxMaterial.diffuseTexture.wrapV = Texture.CLAMP_ADDRESSMODE;
-        // Set emissive to make it glow without lighting
-        skyboxMaterial.emissiveTexture = skyboxMaterial.diffuseTexture;
-        skyboxMaterial.emissiveColor = new Color3(1.0, 1.0, 1.0); // White to preserve original colors
-        skyboxMaterial.specularColor = new Color3(0, 0, 0); // No specular lighting
-        skyboxMaterial.disableLighting = true; // Disable lighting calculations
-        skybox.material = skyboxMaterial;
-        skybox.infiniteDistance = true; // Always render at infinite distance
-        // Make sure skybox moves with camera but ignores translation
-        skybox.parent = this.scene.activeCamera;
-        // Add rotation animation for moving stars effect
-        this.scene.registerBeforeRender(() => {
-            skybox.rotation.y += 0.001; // Increased rotation speed
-        });
-    }
-    setupScene() {
-        // Start render loop immediately so we can see the camera/lighting
-        this.engine.runRenderLoop(() => {
-            this.scene.render();
-        });
-        // ✅ Append entire .glb scene to the current scene
-        console.log("🔍 Attempting to load GLB from: /public/models/game.glb");
-        SceneLoader.LoadAssetContainerAsync("/public/models/", "game.glb", this.scene).then((container) => {
-            console.log("✅ GLB loaded successfully:", container);
-            container.addAllToScene();
-            console.log("📦 Added all meshes to scene");
-            // Position objects at their proper coordinates
-            this.positionObjectsAtCoordinates();
-            // Create strong light emission effects for game objects
-            this.createStrongLightingForGameObjects();
-            // Create invisible walls at floor edges
-            this.createInvisibleWalls();
-            // Setup paddle controls after GLB is loaded
-            this.setupPaddleControls();
-            // Initialize ball physics system
-            this.initializeBallSystem();
-            // Lock camera to object coordinates
-            // this.lockCameraToObjectCoordinates();
-            // Debug materials to check lighting compatibility
-            // this.debugObjectMaterials();
-        }).catch((err) => {
-            console.error("❌ Failed to load GLB scene:", err);
-            console.log("🔍 Trying alternative path: ./public/models/game.glb");
-            // Try alternative path
-            SceneLoader.LoadAssetContainerAsync("./public/models/", "game.glb", this.scene).then((container) => {
-                console.log("✅ GLB loaded with alternative path:", container);
-                container.addAllToScene();
-                console.log("📦 Added all meshes to scene");
-                // Position objects at their proper coordinates
-                this.positionObjectsAtCoordinates();
-                // Create strong light emission effects for game objects
-                this.createStrongLightingForGameObjects();
-                // Create invisible walls at floor edges
-                this.createInvisibleWalls();
-                // Setup paddle controls after GLB is loaded
-                this.setupPaddleControls();
-                // Initialize ball physics system
-                this.initializeBallSystem();
-                // Lock camera to object coordinates
-                // this.lockCameraToObjectCoordinates();
-                // Debug materials to check lighting compatibility
-                // this.debugObjectMaterials();
-            }).catch((err2) => {
-                console.error("❌ Alternative path also failed:", err2);
-            });
-        });
-    }
-    dispose() {
-        this.guiManager.dispose();
-        this.scene.dispose();
-        this.engine.dispose();
-    }
-    initializeBallSystem() {
-        const ball = this.scene.getMeshByName('pongBall');
-        if (!ball) {
-            console.warn("⚠️ Ball not found in scene");
+    checkPaddleCollisions(ball) {
+        if (!this.renderEngine)
             return;
-        }
-        console.log("⚽ Initializing ball physics system");
-        // Start ball movement
-        this.scene.registerBeforeRender(() => {
-            this.updateBallPhysics();
-        });
-    }
-    updateBallPhysics() {
-        // Skip ball updates if game is paused
-        if (this.isPaused)
-            return;
-        const ball = this.scene.getMeshByName('pongBall');
-        if (!ball)
-            return;
-        // Update ball position based on velocity
-        ball.position.addInPlace(this.ballVelocity);
-        // Check collisions and bounce
-        this.checkBallCollisions(ball);
-    }
-    checkBallCollisions(ball) {
-        // Get ball bounds for collision detection
-        ball.computeWorldMatrix(true);
-        ball.getBoundingInfo().update(ball.getWorldMatrix());
-        const ballBounds = ball.getBoundingInfo().boundingBox;
-        const ballRadius = (ballBounds.maximumWorld.x - ballBounds.minimumWorld.x) / 2;
-        // Check collision with floor boundaries (Z-axis walls)
-        const floorPlane = this.scene.getMeshByName('floorPlane');
-        if (floorPlane) {
-            floorPlane.computeWorldMatrix(true);
-            floorPlane.getBoundingInfo().update(floorPlane.getWorldMatrix());
-            const floorBounds = floorPlane.getBoundingInfo().boundingBox;
-            // Ball hits front or back wall (Z boundaries)
-            if (ball.position.z + ballRadius >= floorBounds.maximumWorld.z ||
-                ball.position.z - ballRadius <= floorBounds.minimumWorld.z) {
-                this.ballVelocity.z *= -1; // Reverse Z velocity
-                console.log("⚽ Ball bounced off Z wall");
+        const leftPaddle = this.renderEngine.getMesh('paddleLeft');
+        const rightPaddle = this.renderEngine.getMesh('paddleRight');
+        if (leftPaddle && this.ballVelocity.x < 0) {
+            if (this.isBallCollidingWithPaddle(ball, leftPaddle)) {
+                this.handlePaddleCollision(ball, leftPaddle, 'left');
             }
         }
-        // Check collision with paddles (X boundaries and paddle collision)
-        this.checkPaddleCollisions(ball, ballRadius);
-    }
-    checkPaddleCollisions(ball, ballRadius) {
-        const leftPaddle = this.scene.getMeshByName('paddleLeft');
-        const rightPaddle = this.scene.getMeshByName('paddleRight');
-        // Check collision with left paddle
-        if (leftPaddle && this.ballCollidesWithPaddle(ball, leftPaddle, ballRadius)) {
-            this.ballVelocity.x = Math.abs(this.ballVelocity.x); // Ensure ball moves right
-            this.addPaddleInfluence(ball, leftPaddle);
-            console.log("⚽ Ball hit left paddle");
-        }
-        // Check collision with right paddle  
-        if (rightPaddle && this.ballCollidesWithPaddle(ball, rightPaddle, ballRadius)) {
-            this.ballVelocity.x = -Math.abs(this.ballVelocity.x); // Ensure ball moves left
-            this.addPaddleInfluence(ball, rightPaddle);
-            console.log("⚽ Ball hit right paddle");
-        }
-        // Check if ball went past paddles (scoring)
-        if (ball.position.x < -25) {
-            console.log("🎯 Right player scores!");
-            this.resetBall();
-        }
-        else if (ball.position.x > 25) {
-            console.log("🎯 Left player scores!");
-            this.resetBall();
+        if (rightPaddle && this.ballVelocity.x > 0) {
+            if (this.isBallCollidingWithPaddle(ball, rightPaddle)) {
+                this.handlePaddleCollision(ball, rightPaddle, 'right');
+            }
         }
     }
-    ballCollidesWithPaddle(ball, paddle, ballRadius) {
-        // Simple collision detection between ball and paddle
-        const ballPos = ball.position;
-        const paddlePos = paddle.position;
-        // Get paddle dimensions
+    isBallCollidingWithPaddle(ball, paddle) {
         paddle.computeWorldMatrix(true);
         paddle.getBoundingInfo().update(paddle.getWorldMatrix());
         const paddleBounds = paddle.getBoundingInfo().boundingBox;
-        const paddleWidth = Math.abs(paddleBounds.maximumWorld.x - paddleBounds.minimumWorld.x);
-        const paddleHeight = Math.abs(paddleBounds.maximumWorld.y - paddleBounds.minimumWorld.y);
-        const paddleDepth = Math.abs(paddleBounds.maximumWorld.z - paddleBounds.minimumWorld.z);
-        // Check if ball is within paddle bounds
-        const withinX = Math.abs(ballPos.x - paddlePos.x) < (paddleWidth / 2 + ballRadius);
-        const withinY = Math.abs(ballPos.y - paddlePos.y) < (paddleHeight / 2 + ballRadius);
-        const withinZ = Math.abs(ballPos.z - paddlePos.z) < (paddleDepth / 2 + ballRadius);
-        return withinX && withinY && withinZ;
+        const ballRadius = 0.39;
+        const ballLeft = ball.position.x - ballRadius;
+        const ballRight = ball.position.x + ballRadius;
+        const ballTop = ball.position.z + ballRadius;
+        const ballBottom = ball.position.z - ballRadius;
+        const paddleLeft = paddleBounds.minimumWorld.x;
+        const paddleRight = paddleBounds.maximumWorld.x;
+        const paddleTop = paddleBounds.maximumWorld.z;
+        const paddleBottom = paddleBounds.minimumWorld.z;
+        const xOverlap = ballRight >= paddleLeft && ballLeft <= paddleRight;
+        const zOverlap = ballTop >= paddleBottom && ballBottom <= paddleTop;
+        return xOverlap && zOverlap;
     }
-    addPaddleInfluence(ball, paddle) {
-        // Add some randomness and paddle position influence to ball direction
-        const relativeHitPosition = (ball.position.z - paddle.position.z) / 2; // Normalize hit position
-        this.ballVelocity.z = relativeHitPosition * 0.3; // Add influence to Z direction
-        // Slightly increase speed after each paddle hit
-        this.ballVelocity.normalize();
-        this.ballVelocity.scaleInPlace(this.ballSpeed * 1.05);
-        this.ballSpeed = Math.min(this.ballSpeed * 1.02, 0.8); // Cap max speed
+    handlePaddleCollision(ball, paddle, side) {
+        this.ballVelocity.x = -this.ballVelocity.x;
+        paddle.computeWorldMatrix(true);
+        paddle.getBoundingInfo().update(paddle.getWorldMatrix());
+        const paddleBounds = paddle.getBoundingInfo().boundingBox;
+        const paddleCenter = (paddleBounds.minimumWorld.z + paddleBounds.maximumWorld.z) / 2;
+        const paddleHeight = paddleBounds.maximumWorld.z - paddleBounds.minimumWorld.z;
+        const hitPosition = (ball.position.z - paddleCenter) / (paddleHeight / 2);
+        const maxAngleChange = 0.1;
+        this.ballVelocity.z += hitPosition * maxAngleChange;
+        const currentSpeed = this.ballVelocity.length();
+        if (currentSpeed > 0) {
+            this.ballVelocity.normalize();
+            this.ballVelocity.scaleInPlace(this.ballSpeed);
+        }
+        if (side === 'left') {
+            ball.position.x = paddleBounds.maximumWorld.x + 0.5;
+        }
+        else {
+            ball.position.x = paddleBounds.minimumWorld.x - 0.5;
+        }
+        console.log(`🏐 Ball hit ${side} paddle`);
     }
-    resetBall() {
-        const ball = this.scene.getMeshByName('pongBall');
-        if (!ball)
-            return;
-        // Reset ball to center
-        ball.position = new Vector3(0.00, 0.78, 0.00);
-        // Reset velocity with random direction
-        const randomZ = (Math.random() - 0.5) * 0.4;
-        const randomX = Math.random() > 0.5 ? 0.3 : -0.3;
-        this.ballVelocity = new Vector3(randomX, 0, randomZ);
-        this.ballSpeed = 0.4; // Reset speed
-        console.log("⚽ Ball reset to center");
+    dispose() {
+        this.ballActive = false;
     }
 }
-// ✅ Entry point
+// =====================================
+// INPUT MANAGER
+// =====================================
+class InputManager {
+    constructor() {
+        this.keyStates = new Map();
+        this.inputHandlers = new Map();
+    }
+    initialize() {
+        this.setupEventListeners();
+        console.log("🎮 Input manager initialized");
+    }
+    setupEventListeners() {
+        window.addEventListener('keydown', (event) => {
+            const key = event.key.toLowerCase();
+            if (!this.keyStates.get(key)) {
+                this.keyStates.set(key, true);
+                const handler = this.inputHandlers.get(key);
+                if (handler)
+                    handler(true);
+            }
+        });
+        window.addEventListener('keyup', (event) => {
+            const key = event.key.toLowerCase();
+            this.keyStates.set(key, false);
+            const handler = this.inputHandlers.get(key);
+            if (handler)
+                handler(false);
+        });
+    }
+    isKeyPressed(key) {
+        return this.keyStates.get(key.toLowerCase()) || false;
+    }
+    registerHandler(key, handler) {
+        this.inputHandlers.set(key.toLowerCase(), handler);
+    }
+    unregisterHandler(key) {
+        this.inputHandlers.delete(key.toLowerCase());
+    }
+    dispose() {
+        this.inputHandlers.clear();
+        this.keyStates.clear();
+    }
+}
+// =====================================
+// SCORE MANAGER
+// =====================================
+class ScoreManager {
+    constructor() {
+        this.leftScore = 0;
+        this.rightScore = 0;
+    }
+    initialize() {
+        console.log("📊 Score manager initialized");
+    }
+    setScoreChangeCallback(callback) {
+        this.onScoreChange = callback;
+    }
+    scorePoint(side) {
+        if (side === 'left') {
+            this.leftScore++;
+        }
+        else {
+            this.rightScore++;
+        }
+        console.log(`🎯 ${side} player scores! Score: ${this.leftScore} - ${this.rightScore}`);
+        if (this.onScoreChange) {
+            this.onScoreChange(this.leftScore, this.rightScore);
+        }
+    }
+    getScore() {
+        return { left: this.leftScore, right: this.rightScore };
+    }
+    reset() {
+        this.leftScore = 0;
+        this.rightScore = 0;
+        if (this.onScoreChange) {
+            this.onScoreChange(this.leftScore, this.rightScore);
+        }
+    }
+}
+class GameStateManager {
+    constructor(systems) {
+        this.currentState = null;
+        this.states = new Map();
+        this.systems = systems;
+        this.initializeStates();
+    }
+    initializeStates() {
+        this.states.set('menu', new MenuState(this.systems, this));
+        this.states.set('loading', new LoadingState(this.systems, this));
+        this.states.set('countdown', new CountdownState(this.systems, this));
+        this.states.set('playing', new PlayingState(this.systems, this));
+        this.states.set('paused', new PausedState(this.systems, this));
+        this.states.set('gameOver', new GameOverState(this.systems, this));
+    }
+    setState(stateName) {
+        if (this.currentState) {
+            this.currentState.exit();
+        }
+        const newState = this.states.get(stateName);
+        if (newState) {
+            this.currentState = newState;
+            this.currentState.enter();
+            console.log(`🎮 State changed to: ${stateName}`);
+        }
+    }
+    update(deltaTime) {
+        if (this.currentState) {
+            this.currentState.update(deltaTime);
+        }
+    }
+}
+// =====================================
+// GAME STATES
+//
+// Abstract classes
+// =====================================
+class GameState {
+    constructor(systems, stateManager) {
+        this.systems = systems;
+        this.stateManager = stateManager;
+    }
+}
+class MenuState extends GameState {
+    enter() {
+        console.log("📋 Entered Menu State");
+        this.systems.inputManager.registerHandler('enter', (pressed) => {
+            if (pressed) {
+                this.stateManager.setState('playing');
+            }
+        });
+    }
+    exit() {
+        this.systems.inputManager.unregisterHandler('enter');
+    }
+    update(deltaTime) { }
+}
+class LoadingState extends GameState {
+    enter() {
+        console.log("⏳ Entered Loading State");
+        // Simulate loading, then transition to countdown
+        setTimeout(() => {
+            this.stateManager.setState('countdown');
+        }, 1000);
+    }
+    exit() { }
+    update(deltaTime) { }
+}
+class CountdownState extends GameState {
+    constructor() {
+        super(...arguments);
+        this.countdown = 3;
+        this.timer = 0;
+    }
+    enter() {
+        console.log("⏰ Entered Countdown State");
+        this.countdown = 3;
+        this.timer = 0;
+    }
+    exit() { }
+    update(deltaTime) {
+        this.timer += deltaTime;
+        if (this.timer >= 1000) {
+            this.countdown--;
+            this.timer = 0;
+            console.log(`⏰ Countdown: ${this.countdown}`);
+            if (this.countdown <= 0) {
+                this.stateManager.setState('playing');
+            }
+        }
+    }
+}
+class PlayingState extends GameState {
+    enter() {
+        console.log("🎮 Entered Playing State");
+        // Set up physics system
+        this.systems.physicsSystem.setRenderEngine(this.systems.renderEngine);
+        this.systems.physicsSystem.startBall();
+        this.setupInputHandlers();
+    }
+    exit() {
+        this.cleanupInputHandlers();
+        this.systems.physicsSystem.stopBall();
+    }
+    update(deltaTime) {
+        this.updatePaddleMovement();
+    }
+    setupInputHandlers() {
+        this.systems.inputManager.registerHandler(' ', (pressed) => {
+            if (pressed) {
+                this.stateManager.setState('paused');
+            }
+        });
+    }
+    updatePaddleMovement() {
+        // Left paddle movement
+        let leftInput = 0;
+        if (this.systems.inputManager.isKeyPressed('a'))
+            leftInput -= 1;
+        if (this.systems.inputManager.isKeyPressed('d'))
+            leftInput += 1;
+        if (leftInput !== 0) {
+            this.systems.physicsSystem.updatePaddlePosition('paddleLeft', leftInput);
+        }
+        // Right paddle movement
+        let rightInput = 0;
+        if (this.systems.inputManager.isKeyPressed('arrowleft'))
+            rightInput -= 1;
+        if (this.systems.inputManager.isKeyPressed('arrowright'))
+            rightInput += 1;
+        if (rightInput !== 0) {
+            this.systems.physicsSystem.updatePaddlePosition('paddleRight', rightInput);
+        }
+    }
+    cleanupInputHandlers() {
+        this.systems.inputManager.unregisterHandler(' ');
+    }
+}
+class PausedState extends GameState {
+    enter() {
+        console.log("⏸️ Entered Paused State");
+        this.systems.inputManager.registerHandler(' ', (pressed) => {
+            if (pressed) {
+                this.stateManager.setState('playing');
+            }
+        });
+        this.systems.inputManager.registerHandler('escape', (pressed) => {
+            if (pressed) {
+                this.stateManager.setState('menu');
+            }
+        });
+    }
+    exit() {
+        this.systems.inputManager.unregisterHandler(' ');
+        this.systems.inputManager.unregisterHandler('escape');
+    }
+    update(deltaTime) { }
+}
+class GameOverState extends GameState {
+    enter() {
+        console.log("🏁 Entered Game Over State");
+        this.systems.inputManager.registerHandler('r', (pressed) => {
+            if (pressed) {
+                this.systems.scoreManager.reset();
+                this.stateManager.setState('countdown');
+            }
+        });
+        this.systems.inputManager.registerHandler('escape', (pressed) => {
+            if (pressed) {
+                this.stateManager.setState('menu');
+            }
+        });
+    }
+    exit() {
+        this.systems.inputManager.unregisterHandler('r');
+        this.systems.inputManager.unregisterHandler('escape');
+    }
+    update(deltaTime) { }
+}
+// =====================================
+// SUPPORTING SYSTEMS
+// =====================================
+class AudioManager {
+    initialize() {
+        console.log("🔊 Audio manager initialized");
+    }
+    play(soundName) {
+        console.log(`🔊 Playing sound: ${soundName}`);
+    }
+    dispose() { }
+}
+class UIManager {
+    initialize() {
+        console.log("🖥️ UI manager initialized");
+    }
+    update(deltaTime) { }
+    render() { }
+    dispose() { }
+}
+// =====================================
+// INITIALIZATION
+// =====================================
 window.addEventListener("DOMContentLoaded", () => {
     const canvas = document.getElementById("renderCanvas");
     if (!canvas) {
         console.error("❌ Canvas element with id 'renderCanvas' not found.");
         return;
     }
-    new GLBScene(canvas);
+    console.log("🚀 Starting Pong Game...");
+    new PongGameManager(canvas);
 });
 //# sourceMappingURL=main.js.map

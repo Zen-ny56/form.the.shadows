@@ -39,7 +39,7 @@ class PongGameManager {
     private audioManager: AudioManager;
     private uiManager: UIManager;
     private scoreManager: ScoreManager;
-    
+
     private isRunning: boolean = false;
     private lastTime: number = 0;
 
@@ -855,7 +855,7 @@ abstract class GameState {
 class MenuState extends GameState {
     enter(): void {
         console.log("📋 Entered Menu State");
-        
+
         this.systems.inputManager.registerHandler('enter', (pressed) => {
             if (pressed) {
                 this.stateManager.setState('playing');
