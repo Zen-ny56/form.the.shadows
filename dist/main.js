@@ -374,8 +374,8 @@ class GameObject3D {
 // =====================================
 class PhysicsSystem {
     constructor() {
-        this.ballVelocity = Vector3.Zero();
-        this.ballSpeed = 2;
+        this.ballVelocity = new Vector3(0.3, 0, 0.2);
+        this.ballSpeed = 0.2;
         this.ballActive = false;
         this.renderEngine = null;
     }
@@ -413,10 +413,12 @@ class PhysicsSystem {
         }
     }
     startBallMovement() {
-        const angleRange = Math.PI / 3;
-        const randomAngle = (Math.random() - 0.5) * angleRange;
-        const direction = Math.random() < 0.5 ? 1 : -1;
-        this.ballVelocity = new Vector3(direction * this.ballSpeed * Math.cos(randomAngle), 0, this.ballSpeed * Math.sin(randomAngle));
+        // Create random direction like the old code
+        const randomZ = (Math.random() - 0.5) * 0.4;
+        const randomX = Math.random() > 0.5 ? 0.3 : -0.3;
+        this.ballVelocity = new Vector3(randomX, 0, randomZ);
+        this.ballSpeed = 0.4; // Base speed from old code
+        console.log(`🏐 Ball velocity set to: (${this.ballVelocity.x.toFixed(2)}, ${this.ballVelocity.y.toFixed(2)}, ${this.ballVelocity.z.toFixed(2)})`);
     }
     updatePaddlePosition(paddleName, inputDirection) {
         if (!this.renderEngine || inputDirection === 0)
@@ -460,9 +462,8 @@ class PhysicsSystem {
         const ball = this.renderEngine.getMesh('pongBall');
         if (!ball)
             return;
-        // Move ball
-        const movement = this.ballVelocity.scale(deltaTime / 1000);
-        ball.position.addInPlace(movement);
+        // Move ball - apply velocity directly per frame like the old code
+        ball.position.addInPlace(this.ballVelocity);
         // Check collisions
         this.checkBallCollisions(ball);
     }
@@ -494,56 +495,73 @@ class PhysicsSystem {
             return;
         const leftPaddle = this.renderEngine.getMesh('paddleLeft');
         const rightPaddle = this.renderEngine.getMesh('paddleRight');
-        if (leftPaddle && this.ballVelocity.x < 0) {
-            if (this.isBallCollidingWithPaddle(ball, leftPaddle)) {
-                this.handlePaddleCollision(ball, leftPaddle, 'left');
-            }
-        }
-        if (rightPaddle && this.ballVelocity.x > 0) {
-            if (this.isBallCollidingWithPaddle(ball, rightPaddle)) {
-                this.handlePaddleCollision(ball, rightPaddle, 'right');
-            }
-        }
-    }
-    isBallCollidingWithPaddle(ball, paddle) {
-        paddle.computeWorldMatrix(true);
-        paddle.getBoundingInfo().update(paddle.getWorldMatrix());
-        const paddleBounds = paddle.getBoundingInfo().boundingBox;
         const ballRadius = 0.39;
-        const ballLeft = ball.position.x - ballRadius;
-        const ballRight = ball.position.x + ballRadius;
-        const ballTop = ball.position.z + ballRadius;
-        const ballBottom = ball.position.z - ballRadius;
-        const paddleLeft = paddleBounds.minimumWorld.x;
-        const paddleRight = paddleBounds.maximumWorld.x;
-        const paddleTop = paddleBounds.maximumWorld.z;
-        const paddleBottom = paddleBounds.minimumWorld.z;
-        const xOverlap = ballRight >= paddleLeft && ballLeft <= paddleRight;
-        const zOverlap = ballTop >= paddleBottom && ballBottom <= paddleTop;
-        return xOverlap && zOverlap;
+        // Check collision with left paddle
+        if (leftPaddle && this.ballCollidesWithPaddle(ball, leftPaddle, ballRadius)) {
+            this.ballVelocity.x = Math.abs(this.ballVelocity.x); // Ensure ball moves right
+            this.addPaddleInfluence(ball, leftPaddle);
+            console.log("🏐 Ball hit left paddle");
+        }
+        // Check collision with right paddle  
+        if (rightPaddle && this.ballCollidesWithPaddle(ball, rightPaddle, ballRadius)) {
+            this.ballVelocity.x = -Math.abs(this.ballVelocity.x); // Ensure ball moves left
+            this.addPaddleInfluence(ball, rightPaddle);
+            console.log("🏐 Ball hit right paddle");
+        }
+        // Check if ball went past paddles (scoring)
+        if (ball.position.x < -25) {
+            console.log("🎯 Right player scores!");
+            // TODO: Call score manager when integrated
+            this.resetBall();
+        }
+        else if (ball.position.x > 25) {
+            console.log("🎯 Left player scores!");
+            // TODO: Call score manager when integrated  
+            this.resetBall();
+        }
     }
-    handlePaddleCollision(ball, paddle, side) {
-        this.ballVelocity.x = -this.ballVelocity.x;
+    ballCollidesWithPaddle(ball, paddle, ballRadius) {
+        // Simple collision detection between ball and paddle
+        const ballPos = ball.position;
+        const paddlePos = paddle.position;
+        // Get paddle dimensions
         paddle.computeWorldMatrix(true);
         paddle.getBoundingInfo().update(paddle.getWorldMatrix());
         const paddleBounds = paddle.getBoundingInfo().boundingBox;
-        const paddleCenter = (paddleBounds.minimumWorld.z + paddleBounds.maximumWorld.z) / 2;
-        const paddleHeight = paddleBounds.maximumWorld.z - paddleBounds.minimumWorld.z;
-        const hitPosition = (ball.position.z - paddleCenter) / (paddleHeight / 2);
-        const maxAngleChange = 0.1;
-        this.ballVelocity.z += hitPosition * maxAngleChange;
-        const currentSpeed = this.ballVelocity.length();
-        if (currentSpeed > 0) {
-            this.ballVelocity.normalize();
-            this.ballVelocity.scaleInPlace(this.ballSpeed);
-        }
-        if (side === 'left') {
-            ball.position.x = paddleBounds.maximumWorld.x + 0.5;
-        }
-        else {
-            ball.position.x = paddleBounds.minimumWorld.x - 0.5;
-        }
-        console.log(`🏐 Ball hit ${side} paddle`);
+        const paddleWidth = Math.abs(paddleBounds.maximumWorld.x - paddleBounds.minimumWorld.x);
+        const paddleHeight = Math.abs(paddleBounds.maximumWorld.y - paddleBounds.minimumWorld.y);
+        const paddleDepth = Math.abs(paddleBounds.maximumWorld.z - paddleBounds.minimumWorld.z);
+        // Check if ball is within paddle bounds
+        const withinX = Math.abs(ballPos.x - paddlePos.x) < (paddleWidth / 2 + ballRadius);
+        const withinY = Math.abs(ballPos.y - paddlePos.y) < (paddleHeight / 2 + ballRadius);
+        const withinZ = Math.abs(ballPos.z - paddlePos.z) < (paddleDepth / 2 + ballRadius);
+        return withinX && withinY && withinZ;
+    }
+    addPaddleInfluence(ball, paddle) {
+        // Add some randomness and paddle position influence to ball direction
+        const relativeHitPosition = (ball.position.z - paddle.position.z) / 2; // Normalize hit position
+        this.ballVelocity.z += relativeHitPosition * this.ballSpeed * 0.2; // Add influence to Z direction
+        // Slightly increase speed after each paddle hit
+        this.ballSpeed = Math.min(this.ballSpeed * 1.02, 6.0); // Cap max speed at 6.0
+        // Normalize and rescale to maintain proper speed
+        this.ballVelocity.normalize();
+        this.ballVelocity.scaleInPlace(this.ballSpeed);
+        console.log(`🏐 Ball speed increased to: ${this.ballSpeed.toFixed(2)}`);
+    }
+    resetBall() {
+        if (!this.renderEngine)
+            return;
+        const ball = this.renderEngine.getMesh('pongBall');
+        if (!ball)
+            return;
+        // Reset ball to center
+        ball.position = new Vector3(0.00, 0.78, 0.00);
+        // Reset velocity with random direction like the old code
+        const randomZ = (Math.random() - 0.5) * 0.4;
+        const randomX = Math.random() > 0.5 ? 0.3 : -0.3;
+        this.ballVelocity = new Vector3(randomX, 0, randomZ);
+        this.ballSpeed = 0.4; // Reset to base speed
+        console.log("🏐 Ball reset to center with velocity:", this.ballVelocity);
     }
     dispose() {
         this.ballActive = false;
@@ -755,18 +773,18 @@ class PlayingState extends GameState {
     updatePaddleMovement() {
         // Left paddle movement
         let leftInput = 0;
-        if (this.systems.inputManager.isKeyPressed('a'))
+        if (this.systems.inputManager.isKeyPressed('arrowleft'))
             leftInput -= 1;
-        if (this.systems.inputManager.isKeyPressed('d'))
+        if (this.systems.inputManager.isKeyPressed('arrowright'))
             leftInput += 1;
         if (leftInput !== 0) {
             this.systems.physicsSystem.updatePaddlePosition('paddleLeft', leftInput);
         }
         // Right paddle movement
         let rightInput = 0;
-        if (this.systems.inputManager.isKeyPressed('arrowleft'))
+        if (this.systems.inputManager.isKeyPressed('a'))
             rightInput -= 1;
-        if (this.systems.inputManager.isKeyPressed('arrowright'))
+        if (this.systems.inputManager.isKeyPressed('d'))
             rightInput += 1;
         if (rightInput !== 0) {
             this.systems.physicsSystem.updatePaddlePosition('paddleRight', rightInput);
