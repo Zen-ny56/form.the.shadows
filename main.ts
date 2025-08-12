@@ -485,7 +485,7 @@ class GameObject3D {
 // =====================================
 class PhysicsSystem {
     private ballVelocity: Vector3 = Vector3.Zero();
-    private ballSpeed: number = 0.3;
+    private ballSpeed: number = 2;
     private ballActive: boolean = false;
     private renderEngine: RenderEngine | null = null;
 
@@ -504,6 +504,14 @@ class PhysicsSystem {
         this.startBallMovement();
         this.ballActive = true;
         console.log("🏐 Ball movement started");
+    }
+
+    resumeBall(): void {
+        if (!this.renderEngine) return;
+        
+        // Resume ball without resetting position
+        this.ballActive = true;
+        console.log("🏐 Ball movement resumed");
     }
 
     stopBall(): void {
@@ -810,13 +818,12 @@ class GameStateManager {
     private initializeStates(): void {
         this.states.set('menu', new MenuState(this.systems, this));
         this.states.set('loading', new LoadingState(this.systems, this));
-        // this.states.set('countdown', new CountdownState(this.systems, this));
         this.states.set('playing', new PlayingState(this.systems, this));
         this.states.set('paused', new PausedState(this.systems, this));
         this.states.set('gameOver', new GameOverState(this.systems, this));
     }
 
-    setState(stateName: string): void {
+    async setState(stateName: string): Promise<void> {
         if (this.currentState) {
             this.currentState.exit();
         }
@@ -824,7 +831,7 @@ class GameStateManager {
         const newState = this.states.get(stateName);
         if (newState) {
             this.currentState = newState;
-            this.currentState.enter();
+            await this.currentState.enter();
             console.log(`🎮 State changed to: ${stateName}`);
         }
     }
@@ -833,6 +840,10 @@ class GameStateManager {
         if (this.currentState) {
             this.currentState.update(deltaTime);
         }
+    }
+
+    getState(stateName: string): GameState | undefined {
+        return this.states.get(stateName);
     }
 }
 
@@ -847,7 +858,7 @@ abstract class GameState {
         protected stateManager: GameStateManager
     ) {}
 
-    abstract enter(): void;
+    abstract enter(): void | Promise<void>;
     abstract exit(): void;
     abstract update(deltaTime: number): void;
 }
@@ -884,15 +895,28 @@ class LoadingState extends GameState {
 }
 
 class PlayingState extends GameState {
-    enter(): void {
+    private isResumingFromPause: boolean = false;
+
+    setResumingFromPause(resuming: boolean): void {
+        this.isResumingFromPause = resuming;
+    }
+
+    async enter(): Promise<void> {
         console.log("🎮 Entered Playing State");
-        
         // Set up physics system
         this.systems.physicsSystem.setRenderEngine(this.systems.renderEngine);
-        this.countdown();
-        this.systems.physicsSystem.startBall();
+        
+        if (this.isResumingFromPause) {
+            console.log("🎮 Resuming from pause - skipping countdown");
+            this.systems.physicsSystem.resumeBall();
+        } else {
+            console.log("🎮 Starting fresh game - doing countdown");
+            await this.countdown();
+            this.systems.physicsSystem.startBall();
+        }
         
         this.setupInputHandlers();
+        this.isResumingFromPause = false; // Reset flag after use
     }
 
     exit(): void {
@@ -904,18 +928,20 @@ class PlayingState extends GameState {
         this.updatePaddleMovement();
     }
 
-    private countdown(): void
-    {
-        let countdown = 3;
-    
-        const timer = setInterval(() => {
-        console.log(countdown);
-        countdown--;
-        if (countdown < 0) {
-            clearInterval(timer);
-            console.log("Countdown finished!");
-            }
-        }, 1000);
+    private countdown(): Promise<void> {
+        return new Promise((resolve) => {
+            let countdown = 3;
+        
+            const timer = setInterval(() => {
+                console.log(countdown);
+                countdown--;
+                if (countdown < 0) {
+                    clearInterval(timer);
+                    console.log("Countdown finished!");
+                    resolve();
+                }
+            }, 1000);
+        });
     }
 
     private setupInputHandlers(): void {
@@ -957,6 +983,11 @@ class PausedState extends GameState {
         
         this.systems.inputManager.registerHandler(' ', (pressed) => {
             if (pressed) {
+                // Set resume flag before transitioning
+                const playingState = this.stateManager.getState('playing') as PlayingState;
+                if (playingState) {
+                    playingState.setResumingFromPause(true);
+                }
                 this.stateManager.setState('playing');
             }
         });
