@@ -77,11 +77,6 @@ class GLBScene {
                     if (this.audioContext && this.audioContext.state === 'suspended') {
                         this.audioContext.resume().then(() => {
                             console.log("🔊 Audio context resumed successfully");
-                            // Remove the audio prompt once audio is activated
-                            const audioPrompt = document.getElementById('audioPrompt');
-                            if (audioPrompt) {
-                                audioPrompt.style.display = 'none';
-                            }
                         });
                     }
                     // Remove the listener after first use
@@ -96,8 +91,7 @@ class GLBScene {
             // Generate and create sound effects
             this.createSoundEffects();
             
-            // Setup test audio button
-            this.setupTestAudioButton();
+
         } catch (error) {
             console.warn("⚠️ Audio initialization failed:", error);
             console.warn("⚠️ Audio features will be disabled");
@@ -255,29 +249,7 @@ class GLBScene {
         console.log("🔊 Pause sound played");
     }
 
-    private setupTestAudioButton(): void {
-        // Setup test audio button after page load
-        setTimeout(() => {
-            const testBtn = document.getElementById('testAudioBtn');
-            if (testBtn) {
-                testBtn.addEventListener('click', () => {
-                    console.log("🔊 Testing all audio sounds...");
-                    
-                    // First test a simple Web Audio API beep
-                    this.testSimpleBeep();
-                    
-                    // Test all sounds with delays
-                    setTimeout(() => this.playBoundaryHitSound(), 500);
-                    setTimeout(() => this.playBallHitSound(), 1000);
-                    setTimeout(() => this.playBallWallBounceSound(), 1500);
-                    setTimeout(() => this.playScoreSound(), 2000);
-                    setTimeout(() => this.playPauseSound(), 3000);
-                    
-                    console.log("🔊 Audio test sequence started - check console for sound messages");
-                });
-            }
-        }, 1000);
-    }
+
 
     private testSimpleBeep(): void {
         // Test a simple direct Web Audio API beep
