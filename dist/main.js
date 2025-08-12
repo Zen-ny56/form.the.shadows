@@ -14,6 +14,7 @@ import { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { Color3 } from "@babylonjs/core/Maths/math.color";
+import { GUIManager } from "./gui-manager.js";
 import "@babylonjs/loaders/glTF"; // Required for loading .glb/.gltf
 // ===========================================
 // *******************************************
@@ -378,38 +379,9 @@ class PhysicsSystem {
         this.ballSpeed = 0.2;
         this.ballActive = false;
         this.renderEngine = null;
-        this.scoreManager = null;
-        this.hasScored = false;
-        this.countdownCallback = null;
     }
     initialize() {
         console.log("⚡ Physics system initialized");
-    }
-    setScoreManager(scoreManager) {
-        this.scoreManager = scoreManager;
-    }
-    checkHasScored() {
-        return this.hasScored;
-    }
-    resetScoredFlag() {
-        this.hasScored = false;
-    }
-    resetPaddlePositions() {
-        if (!this.renderEngine)
-            return;
-        const leftPaddle = this.renderEngine.getMesh('paddleLeft');
-        const rightPaddle = this.renderEngine.getMesh('paddleRight');
-        if (leftPaddle) {
-            leftPaddle.position = new Vector3(-20.28, 1.00, 0.00);
-            console.log("🏓 Left paddle reset to starting position");
-        }
-        if (rightPaddle) {
-            rightPaddle.position = new Vector3(20.28, 1.00, 0.00);
-            console.log("🏓 Right paddle reset to starting position");
-        }
-    }
-    setCountdownCallback(callback) {
-        this.countdownCallback = callback;
     }
     setRenderEngine(renderEngine) {
         this.renderEngine = renderEngine;
@@ -539,17 +511,13 @@ class PhysicsSystem {
         }
         // Check if ball went past paddles (scoring)
         if (ball.position.x < -25) {
-            if (this.scoreManager) {
-                this.scoreManager.scorePoint('right');
-            }
-            this.hasScored = true;
+            console.log("🎯 Right player scores!");
+            // TODO: Call score manager when integrated
             this.resetBall();
         }
         else if (ball.position.x > 25) {
-            if (this.scoreManager) {
-                this.scoreManager.scorePoint('left');
-            }
-            this.hasScored = true;
+            console.log("🎯 Left player scores!");
+            // TODO: Call score manager when integrated  
             this.resetBall();
         }
     }
@@ -589,34 +557,12 @@ class PhysicsSystem {
             return;
         // Reset ball to center
         ball.position = new Vector3(0.00, 0.78, 0.00);
-        // Stop the ball movement temporarily
-        this.ballActive = false;
-        this.ballVelocity = new Vector3(0, 0, 0);
-        // If someone scored, reset paddles immediately and start countdown
-        if (this.hasScored) {
-            this.resetPaddlePositions();
-            this.startPostScoreCountdown();
-        }
-        else {
-            // Normal reset without countdown
-            this.resetBallMovement();
-        }
-    }
-    resetBallMovement() {
         // Reset velocity with random direction like the old code
         const randomZ = (Math.random() - 0.5) * 0.4;
         const randomX = Math.random() > 0.5 ? 0.3 : -0.3;
         this.ballVelocity = new Vector3(randomX, 0, randomZ);
         this.ballSpeed = 0.4; // Reset to base speed
-        this.ballActive = true;
         console.log("🏐 Ball reset to center with velocity:", this.ballVelocity);
-    }
-    async startPostScoreCountdown() {
-        if (this.countdownCallback) {
-            await this.countdownCallback();
-        }
-        this.resetScoredFlag();
-        this.resetBallMovement();
     }
     dispose() {
         this.ballActive = false;
@@ -751,14 +697,17 @@ class GameState {
 class MenuState extends GameState {
     enter() {
         console.log("📋 Entered Menu State");
-        this.systems.inputManager.registerHandler('enter', (pressed) => {
+        this.systems.uiManager.showStart();
+        this.systems.inputManager.registerHandler(' ', (pressed) => {
             if (pressed) {
+                this.systems.uiManager.hideStart();
                 this.stateManager.setState('playing');
             }
         });
     }
     exit() {
-        this.systems.inputManager.unregisterHandler('enter');
+        this.systems.uiManager.hideStart();
+        this.systems.inputManager.unregisterHandler(' ');
     }
     update(deltaTime) { }
 }
@@ -777,13 +726,6 @@ class PlayingState extends GameState {
     constructor() {
         super(...arguments);
         this.isResumingFromPause = false;
-        this.countdownState = {
-            active: false,
-            currentCount: 3,
-            type: null,
-            timer: null,
-            resolve: null
-        };
     }
     setResumingFromPause(resuming) {
         this.isResumingFromPause = resuming;
@@ -792,146 +734,43 @@ class PlayingState extends GameState {
         console.log("🎮 Entered Playing State");
         // Set up physics system
         this.systems.physicsSystem.setRenderEngine(this.systems.renderEngine);
-        this.systems.physicsSystem.setScoreManager(this.systems.scoreManager);
-        this.systems.physicsSystem.setCountdownCallback(() => this.countdown('post-score'));
         if (this.isResumingFromPause) {
-            console.log("🎮 Resuming from pause");
-            // Check if there was a countdown in progress
-            if (this.countdownState.active) {
-                console.log("🎮 Resuming interrupted countdown");
-                this.resumeCountdown();
-                // Wait for countdown to finish before starting/resuming ball
-                await new Promise((resolve) => {
-                    const originalResolve = this.countdownState.resolve;
-                    this.countdownState.resolve = () => {
-                        if (originalResolve)
-                            originalResolve();
-                        resolve();
-                    };
-                });
-                if (this.countdownState.type === 'post-score') {
-                    // Post-score countdown handles ball restart automatically
-                }
-                else {
-                    this.systems.physicsSystem.startBall();
-                }
-            }
-            else {
-                console.log("🎮 No countdown to resume - resuming ball");
-                this.systems.physicsSystem.resumeBall();
-            }
+            console.log("🎮 Resuming from pause - skipping countdown");
+            this.systems.physicsSystem.resumeBall();
         }
         else {
             console.log("🎮 Starting fresh game - doing countdown");
-            await this.countdown('game-start');
+            await this.countdown();
             this.systems.physicsSystem.startBall();
         }
         this.setupInputHandlers();
         this.isResumingFromPause = false; // Reset flag after use
     }
     exit() {
-        this.pauseCountdown();
         this.cleanupInputHandlers();
         this.systems.physicsSystem.stopBall();
     }
     update(deltaTime) {
         this.updatePaddleMovement();
     }
-    countdown(type) {
+    countdown() {
         return new Promise((resolve) => {
-            // If resuming an existing countdown, continue from where we left off
-            const startingCount = this.countdownState.active ? this.countdownState.currentCount : 3;
-            this.countdownState.active = true;
-            this.countdownState.type = type || 'game-start';
-            this.countdownState.currentCount = startingCount;
-            this.countdownState.resolve = resolve;
-            const isPostScore = this.countdownState.type === 'post-score';
-            const tick = () => {
-                if (!this.countdownState.active) {
-                    // Countdown was paused, don't continue
-                    return;
+            let countdown = 3;
+            this.systems.uiManager.showCountdown(countdown);
+            const timer = setInterval(() => {
+                this.systems.uiManager.showCountdown(countdown);
+                countdown--;
+                if (countdown < 0) {
+                    clearInterval(timer);
+                    console.log("Countdown finished!");
+                    this.systems.uiManager.clearCountdown();
+                    resolve();
                 }
-                if (isPostScore) {
-                    console.log(`⏱️ ${this.countdownState.currentCount}...`);
-                }
-                else {
-                    console.log(this.countdownState.currentCount);
-                }
-                if (this.countdownState.currentCount <= 0) {
-                    this.finishCountdown();
-                }
-                else {
-                    this.countdownState.currentCount--;
-                    this.countdownState.timer = setTimeout(tick, 1000);
-                }
-            };
-            tick();
+            }, 1000);
         });
-    }
-    finishCountdown() {
-        if (this.countdownState.timer) {
-            clearTimeout(this.countdownState.timer);
-        }
-        const isPostScore = this.countdownState.type === 'post-score';
-        if (isPostScore) {
-            console.log("🚀 Countdown finished!");
-        }
-        else {
-            console.log("Countdown finished!");
-        }
-        if (this.countdownState.resolve) {
-            this.countdownState.resolve();
-        }
-        this.resetCountdownState();
-    }
-    pauseCountdown() {
-        if (this.countdownState.active && this.countdownState.timer) {
-            clearTimeout(this.countdownState.timer);
-            this.countdownState.timer = null;
-            console.log(`⏸️ Countdown paused at ${this.countdownState.currentCount}`);
-        }
-    }
-    resumeCountdown() {
-        if (this.countdownState.active && !this.countdownState.timer && this.countdownState.resolve) {
-            // Reset countdown to 3 when resuming after pause
-            this.countdownState.currentCount = 3;
-            console.log(`▶️ Restarting countdown from 3`);
-            const isPostScore = this.countdownState.type === 'post-score';
-            const tick = () => {
-                if (!this.countdownState.active) {
-                    return;
-                }
-                if (isPostScore) {
-                    console.log(`⏱️ ${this.countdownState.currentCount}...`);
-                }
-                else {
-                    console.log(this.countdownState.currentCount);
-                }
-                if (this.countdownState.currentCount <= 0) {
-                    this.finishCountdown();
-                }
-                else {
-                    this.countdownState.currentCount--;
-                    this.countdownState.timer = setTimeout(tick, 1000);
-                }
-            };
-            tick();
-        }
-    }
-    resetCountdownState() {
-        this.countdownState.active = false;
-        this.countdownState.currentCount = 3;
-        this.countdownState.type = null;
-        this.countdownState.timer = null;
-        this.countdownState.resolve = null;
     }
     setupInputHandlers() {
         this.systems.inputManager.registerHandler(' ', (pressed) => {
-            if (pressed) {
-                this.stateManager.setState('paused');
-            }
-        });
-        this.systems.inputManager.registerHandler('escape', (pressed) => {
             if (pressed) {
                 this.stateManager.setState('paused');
             }
@@ -959,31 +798,41 @@ class PlayingState extends GameState {
     }
     cleanupInputHandlers() {
         this.systems.inputManager.unregisterHandler(' ');
-        this.systems.inputManager.unregisterHandler('escape');
     }
 }
 class PausedState extends GameState {
     enter() {
         console.log("⏸️ Entered Paused State");
-        this.systems.inputManager.registerHandler(' ', (pressed) => {
-            if (pressed) {
-                // Set resume flag before transitioning
+        this.systems.uiManager.showPause({
+            onResume: () => {
                 const playingState = this.stateManager.getState('playing');
-                if (playingState) {
+                if (playingState)
                     playingState.setResumingFromPause(true);
-                }
+                this.stateManager.setState('playing');
+            },
+            onRestart: () => {
+                // Reset score and physics, then countdown
+                this.systems.scoreManager.reset();
+                this.systems.physicsSystem.stopBall();
+                this.systems.uiManager.hidePause();
+                const playingState = this.stateManager.getState('playing');
+                if (playingState)
+                    playingState.setResumingFromPause(false);
                 this.stateManager.setState('playing');
             }
         });
-        this.systems.inputManager.registerHandler('escape', (pressed) => {
+        this.systems.inputManager.registerHandler(' ', (pressed) => {
             if (pressed) {
-                this.stateManager.setState('menu');
+                const playingState = this.stateManager.getState('playing');
+                if (playingState)
+                    playingState.setResumingFromPause(true);
+                this.stateManager.setState('playing');
             }
         });
     }
     exit() {
+        this.systems.uiManager.hidePause();
         this.systems.inputManager.unregisterHandler(' ');
-        this.systems.inputManager.unregisterHandler('escape');
     }
     update(deltaTime) { }
 }
@@ -993,18 +842,15 @@ class GameOverState extends GameState {
         this.systems.inputManager.registerHandler('r', (pressed) => {
             if (pressed) {
                 this.systems.scoreManager.reset();
-                this.stateManager.setState('countdown');
-            }
-        });
-        this.systems.inputManager.registerHandler('escape', (pressed) => {
-            if (pressed) {
-                this.stateManager.setState('menu');
+                const playingState = this.stateManager.getState('playing');
+                if (playingState)
+                    playingState.setResumingFromPause(false);
+                this.stateManager.setState('playing');
             }
         });
     }
     exit() {
         this.systems.inputManager.unregisterHandler('r');
-        this.systems.inputManager.unregisterHandler('escape');
     }
     update(deltaTime) { }
 }
@@ -1021,12 +867,24 @@ class AudioManager {
     dispose() { }
 }
 class UIManager {
+    constructor() {
+        this.gui = new GUIManager();
+    }
     initialize() {
         console.log("🖥️ UI manager initialized");
     }
+    // Start Menu
+    showStart(options) { this.gui.createStartMenu(options); }
+    hideStart() { this.gui.removeStartMenu(); }
+    // Pause Menu
+    showPause(options) { this.gui.createPauseMenu(options); }
+    hidePause() { this.gui.removePauseMenu(); }
+    // Countdown
+    showCountdown(value) { this.gui.updateCountdown(value); }
+    clearCountdown() { this.gui.clearCountdown(); }
     update(deltaTime) { }
     render() { }
-    dispose() { }
+    dispose() { this.gui.dispose(); }
 }
 // =====================================
 // INITIALIZATION

@@ -1,8 +1,14 @@
 export class GUIManager {
     private pauseMenu: HTMLElement | null = null;
+    private startMenu: HTMLElement | null = null;
+    private countdownEl: HTMLElement | null = null;
+    // Default assets/config
+    private defaultTitleImageUrl?: string;
 
     constructor() {
         this.injectTronStyles();
+        // Set default title image used by the Start Menu if none is provided by callers
+        this.defaultTitleImageUrl = 'public/textures/tronpong.png';
     }
 
     private injectTronStyles(): void {
@@ -194,7 +200,7 @@ export class GUIManager {
         document.head.appendChild(style);
     }
 
-    public createPauseMenu(): void {
+    public createPauseMenu(options?: { onResume?: () => void; onRestart?: () => void }): void {
         // Remove existing pause menu if it exists
         this.removePauseMenu();
 
@@ -208,7 +214,12 @@ export class GUIManager {
                     <div class="title-underline"></div>
                 </div>
                 <div class="resume-prompt">
-                    <span class="key-highlight">ESC</span> TO RESUME
+                    <span class="key-highlight">SPACE</span> TO RESUME
+                </div>
+                <div style="margin-top: 10px;">
+                    <button id="restartButton" style="cursor:pointer;padding:10px 16px;border:2px solid #00ffff;background:black;color:#00ffff;font-family:'Orbitron','Courier New',monospace;text-shadow:0 0 10px #00ffff;box-shadow:0 0 15px rgba(0,255,255,0.5);">
+                        RESTART
+                    </button>
                 </div>
                 <div class="pause-controls">
                     <div class="control-header">CONTROL INTERFACE</div>
@@ -252,6 +263,12 @@ export class GUIManager {
         `;
 
         document.body.appendChild(this.pauseMenu);
+
+        // Wire callbacks
+        const restartBtn = this.pauseMenu.querySelector('#restartButton') as HTMLButtonElement | null;
+        if (restartBtn && options?.onRestart) {
+            restartBtn.addEventListener('click', () => options.onRestart && options.onRestart());
+        }
     }
 
     public removePauseMenu(): void {
@@ -299,6 +316,107 @@ export class GUIManager {
         const styles = document.getElementById('tronStyles');
         if (styles) {
             styles.remove();
+        }
+    }
+
+    // ===== Start Menu =====
+    public createStartMenu(options?: { titleImageUrl?: string }): void {
+        this.removeStartMenu();
+
+        this.startMenu = document.createElement('div');
+        this.startMenu.id = 'startMenu';
+    const effectiveTitleImage = options?.titleImageUrl ?? this.defaultTitleImageUrl;
+    const titleBlock = effectiveTitleImage
+            ? `<div class="title-container">
+            <img src="${effectiveTitleImage}" alt="Title" style="max-width:420px; width:80%; filter: drop-shadow(0 0 12px #00ffff);"/>
+                    <div class="title-underline"></div>
+               </div>`
+            : `<div class="title-container">
+                    <h1 class="tron-title">TRONPONG</h1>
+                    <div class="title-underline"></div>
+               </div>`;
+        this.startMenu.innerHTML = `
+            <div class="pause-content">
+                ${titleBlock}
+                <div class="resume-prompt">
+                    PRESS <span class="key-highlight">SPACE</span> TO START
+                </div>
+                <div class="pause-controls">
+                    <div class="control-header">CONTROLS</div>
+                    <div class="control-grid">
+                        <div class="control-row">
+                            <span class="control-label">LEFT PADDLE</span>
+                            <span class="control-keys"><span class="key">←</span>/<span class="key">→</span></span>
+                        </div>
+                        <div class="control-row">
+                            <span class="control-label">RIGHT PADDLE</span>
+                            <span class="control-keys"><span class="key">A</span>/<span class="key">D</span></span>
+                        </div>
+                        <div class="control-row">
+                            <span class="control-label">PAUSE/RESUME</span>
+                            <span class="control-keys"><span class="key">SPACE</span></span>
+                        </div>
+                        
+                    </div>
+                </div>
+            </div>
+        `;
+
+        this.startMenu.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.95);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+            font-family: 'Courier New', 'Monaco', monospace;
+            color: #00ffff;
+            overflow: hidden;
+        `;
+
+        document.body.appendChild(this.startMenu);
+    }
+
+    public removeStartMenu(): void {
+        if (this.startMenu) {
+            this.startMenu.remove();
+            this.startMenu = null;
+        }
+    }
+
+    // ===== Countdown Overlay =====
+    public updateCountdown(value: number | string): void {
+        if (!this.countdownEl) {
+            this.countdownEl = document.createElement('div');
+            this.countdownEl.id = 'countdownOverlay';
+            this.countdownEl.style.cssText = `
+                position: fixed;
+                top: 0; left: 0; width: 100%; height: 100%;
+                display: flex; align-items: center; justify-content: center;
+                z-index: 10000; pointer-events: none;
+                color: #00ffff;
+                text-shadow: 0 0 20px #00ffff, 0 0 40px #00ffff;
+                font-family: 'Orbitron', 'Courier New', monospace;
+                background: rgba(0,0,0,0.2);
+            `;
+            document.body.appendChild(this.countdownEl);
+        }
+        const content = typeof value === 'number' ? value.toString() : value;
+        this.countdownEl.innerHTML = `
+            <div style="font-size: 96px; font-weight: 900; letter-spacing: 4px;">
+                ${content}
+            </div>
+        `;
+    }
+
+    public clearCountdown(): void {
+        if (this.countdownEl) {
+            this.countdownEl.remove();
+            this.countdownEl = null;
         }
     }
 }
