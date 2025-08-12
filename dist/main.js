@@ -14,6 +14,7 @@ import { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { Color3 } from "@babylonjs/core/Maths/math.color";
+import { GUIManager } from "./gui-manager.js";
 import "@babylonjs/loaders/glTF"; // Required for loading .glb/.gltf
 // ===========================================
 // *******************************************
@@ -696,14 +697,17 @@ class GameState {
 class MenuState extends GameState {
     enter() {
         console.log("📋 Entered Menu State");
-        this.systems.inputManager.registerHandler('enter', (pressed) => {
+        this.systems.uiManager.showStart();
+        this.systems.inputManager.registerHandler(' ', (pressed) => {
             if (pressed) {
+                this.systems.uiManager.hideStart();
                 this.stateManager.setState('playing');
             }
         });
     }
     exit() {
-        this.systems.inputManager.unregisterHandler('enter');
+        this.systems.uiManager.hideStart();
+        this.systems.inputManager.unregisterHandler(' ');
     }
     update(deltaTime) { }
 }
@@ -752,12 +756,14 @@ class PlayingState extends GameState {
     countdown() {
         return new Promise((resolve) => {
             let countdown = 3;
+            this.systems.uiManager.showCountdown(countdown);
             const timer = setInterval(() => {
-                console.log(countdown);
+                this.systems.uiManager.showCountdown(countdown);
                 countdown--;
                 if (countdown < 0) {
                     clearInterval(timer);
                     console.log("Countdown finished!");
+                    this.systems.uiManager.clearCountdown();
                     resolve();
                 }
             }, 1000);
@@ -797,25 +803,36 @@ class PlayingState extends GameState {
 class PausedState extends GameState {
     enter() {
         console.log("⏸️ Entered Paused State");
-        this.systems.inputManager.registerHandler(' ', (pressed) => {
-            if (pressed) {
-                // Set resume flag before transitioning
+        this.systems.uiManager.showPause({
+            onResume: () => {
                 const playingState = this.stateManager.getState('playing');
-                if (playingState) {
+                if (playingState)
                     playingState.setResumingFromPause(true);
-                }
+                this.stateManager.setState('playing');
+            },
+            onRestart: () => {
+                // Reset score and physics, then countdown
+                this.systems.scoreManager.reset();
+                this.systems.physicsSystem.stopBall();
+                this.systems.uiManager.hidePause();
+                const playingState = this.stateManager.getState('playing');
+                if (playingState)
+                    playingState.setResumingFromPause(false);
                 this.stateManager.setState('playing');
             }
         });
-        this.systems.inputManager.registerHandler('escape', (pressed) => {
+        this.systems.inputManager.registerHandler(' ', (pressed) => {
             if (pressed) {
-                this.stateManager.setState('menu');
+                const playingState = this.stateManager.getState('playing');
+                if (playingState)
+                    playingState.setResumingFromPause(true);
+                this.stateManager.setState('playing');
             }
         });
     }
     exit() {
+        this.systems.uiManager.hidePause();
         this.systems.inputManager.unregisterHandler(' ');
-        this.systems.inputManager.unregisterHandler('escape');
     }
     update(deltaTime) { }
 }
@@ -825,18 +842,15 @@ class GameOverState extends GameState {
         this.systems.inputManager.registerHandler('r', (pressed) => {
             if (pressed) {
                 this.systems.scoreManager.reset();
-                this.stateManager.setState('countdown');
-            }
-        });
-        this.systems.inputManager.registerHandler('escape', (pressed) => {
-            if (pressed) {
-                this.stateManager.setState('menu');
+                const playingState = this.stateManager.getState('playing');
+                if (playingState)
+                    playingState.setResumingFromPause(false);
+                this.stateManager.setState('playing');
             }
         });
     }
     exit() {
         this.systems.inputManager.unregisterHandler('r');
-        this.systems.inputManager.unregisterHandler('escape');
     }
     update(deltaTime) { }
 }
@@ -853,12 +867,24 @@ class AudioManager {
     dispose() { }
 }
 class UIManager {
+    constructor() {
+        this.gui = new GUIManager();
+    }
     initialize() {
         console.log("🖥️ UI manager initialized");
     }
+    // Start Menu
+    showStart(options) { this.gui.createStartMenu(options); }
+    hideStart() { this.gui.removeStartMenu(); }
+    // Pause Menu
+    showPause(options) { this.gui.createPauseMenu(options); }
+    hidePause() { this.gui.removePauseMenu(); }
+    // Countdown
+    showCountdown(value) { this.gui.updateCountdown(value); }
+    clearCountdown() { this.gui.clearCountdown(); }
     update(deltaTime) { }
     render() { }
-    dispose() { }
+    dispose() { this.gui.dispose(); }
 }
 // =====================================
 // INITIALIZATION

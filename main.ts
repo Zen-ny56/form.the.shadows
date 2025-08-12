@@ -22,6 +22,7 @@ import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { Color3 } from "@babylonjs/core/Maths/math.color";
 import { ActionManager } from "@babylonjs/core/Actions/actionManager";
 import { ExecuteCodeAction } from "@babylonjs/core/Actions/directActions";
+import { GUIManager } from "./gui-manager.js";
 import "@babylonjs/loaders/glTF"; // Required for loading .glb/.gltf
 
 // ===========================================
@@ -882,16 +883,19 @@ abstract class GameState {
 class MenuState extends GameState {
     enter(): void {
         console.log("📋 Entered Menu State");
+        this.systems.uiManager.showStart();
 
-        this.systems.inputManager.registerHandler('enter', (pressed) => {
+        this.systems.inputManager.registerHandler(' ', (pressed) => {
             if (pressed) {
+                this.systems.uiManager.hideStart();
                 this.stateManager.setState('playing');
             }
         });
     }
 
     exit(): void {
-        this.systems.inputManager.unregisterHandler('enter');
+        this.systems.uiManager.hideStart();
+        this.systems.inputManager.unregisterHandler(' ');
     }
 
     update(deltaTime: number): void {}
@@ -947,13 +951,14 @@ class PlayingState extends GameState {
     private countdown(): Promise<void> {
         return new Promise((resolve) => {
             let countdown = 3;
-        
+            this.systems.uiManager.showCountdown(countdown);
             const timer = setInterval(() => {
-                console.log(countdown);
+                this.systems.uiManager.showCountdown(countdown);
                 countdown--;
                 if (countdown < 0) {
                     clearInterval(timer);
                     console.log("Countdown finished!");
+                    this.systems.uiManager.clearCountdown();
                     resolve();
                 }
             }, 1000);
@@ -996,28 +1001,35 @@ class PlayingState extends GameState {
 class PausedState extends GameState {
     enter(): void {
         console.log("⏸️ Entered Paused State");
-        
-        this.systems.inputManager.registerHandler(' ', (pressed) => {
-            if (pressed) {
-                // Set resume flag before transitioning
+        this.systems.uiManager.showPause({
+            onResume: () => {
                 const playingState = this.stateManager.getState('playing') as PlayingState;
-                if (playingState) {
-                    playingState.setResumingFromPause(true);
-                }
+                if (playingState) playingState.setResumingFromPause(true);
+                this.stateManager.setState('playing');
+            },
+            onRestart: () => {
+                // Reset score and physics, then countdown
+                this.systems.scoreManager.reset();
+                this.systems.physicsSystem.stopBall();
+                this.systems.uiManager.hidePause();
+                const playingState = this.stateManager.getState('playing') as PlayingState;
+                if (playingState) playingState.setResumingFromPause(false);
                 this.stateManager.setState('playing');
             }
         });
-        
-        this.systems.inputManager.registerHandler('escape', (pressed) => {
+
+        this.systems.inputManager.registerHandler(' ', (pressed) => {
             if (pressed) {
-                this.stateManager.setState('menu');
+                const playingState = this.stateManager.getState('playing') as PlayingState;
+                if (playingState) playingState.setResumingFromPause(true);
+                this.stateManager.setState('playing');
             }
         });
     }
 
     exit(): void {
+        this.systems.uiManager.hidePause();
         this.systems.inputManager.unregisterHandler(' ');
-        this.systems.inputManager.unregisterHandler('escape');
     }
 
     update(deltaTime: number): void {}
@@ -1030,20 +1042,15 @@ class GameOverState extends GameState {
         this.systems.inputManager.registerHandler('r', (pressed) => {
             if (pressed) {
                 this.systems.scoreManager.reset();
-                this.stateManager.setState('countdown');
-            }
-        });
-        
-        this.systems.inputManager.registerHandler('escape', (pressed) => {
-            if (pressed) {
-                this.stateManager.setState('menu');
+                const playingState = this.stateManager.getState('playing') as PlayingState;
+                if (playingState) playingState.setResumingFromPause(false);
+                this.stateManager.setState('playing');
             }
         });
     }
 
     exit(): void {
         this.systems.inputManager.unregisterHandler('r');
-        this.systems.inputManager.unregisterHandler('escape');
     }
 
     update(deltaTime: number): void {}
@@ -1065,13 +1072,27 @@ class AudioManager {
 }
 
 class UIManager {
+    private gui = new GUIManager();
+
     initialize(): void {
         console.log("🖥️ UI manager initialized");
     }
 
+    // Start Menu
+    showStart(options?: { titleImageUrl?: string }): void { this.gui.createStartMenu(options); }
+    hideStart(): void { this.gui.removeStartMenu(); }
+
+    // Pause Menu
+    showPause(options?: { onResume?: () => void; onRestart?: () => void }): void { this.gui.createPauseMenu(options); }
+    hidePause(): void { this.gui.removePauseMenu(); }
+
+    // Countdown
+    showCountdown(value: number | string): void { this.gui.updateCountdown(value); }
+    clearCountdown(): void { this.gui.clearCountdown(); }
+
     update(deltaTime: number): void {}
     render(): void {}
-    dispose(): void {}
+    dispose(): void { this.gui.dispose(); }
 }
 
 // =====================================
