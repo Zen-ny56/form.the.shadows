@@ -27,6 +27,7 @@
             "@babylonjs/core/Lights/Shadows/shadowGeneratorSceneComponent": "./node_modules/@babylonjs/core/Lights/Shadows/shadowGeneratorSceneComponent.js",
             "@babylonjs/core/Actions/actionManager": "./node_modules/@babylonjs/core/Actions/actionManager.js",
             "@babylonjs/core/Actions/directActions": "./node_modules/@babylonjs/core/Actions/directActions.js",
+            "@babylonjs/core/Audio/sound.js": "./node_modules/@babylonjs/core/Audio/sound.js",
             "@babylonjs/core/boundingBox": "./node_modules/@babylonjs/core/boundingBox.js",
             "@babylonjs/loaders/glTF": "./node_modules/@babylonjs/loaders/glTF/index.js"
         }
@@ -45,10 +46,32 @@
             height: 100%;
             touch-action: none;
         }
+        #audioPrompt {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            color: #00ffff;
+            padding: 15px;
+            border: 1px solid #00ffff;
+            border-radius: 5px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            z-index: 1001;
+            box-shadow: 0 0 10px rgba(0, 255, 255, 0.3);
+            max-width: 250px;
+        }
     </style>
 </head>
 <body>
     <canvas id="renderCanvas"></canvas>
+    <div id="audioPrompt">
+        🔊 <strong>Audio Ready!</strong><br>
+        Click or press any key to activate sound effects.<br>
+        <small>Controls: A/D (left paddle), Arrow keys (right paddle), ESC (pause)</small>
+        <br><br>
+        <button id="testAudioBtn" style="padding: 8px 16px; background: #00ffff; color: #000; border: none; border-radius: 3px; cursor: pointer; font-weight: bold;">🔊 Test Audio</button>
+    </div>
     <script type="module" src="./dist/main.js"></script>
 </body>
 </html>

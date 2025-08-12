@@ -18,6 +18,7 @@ import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { Color3 } from "@babylonjs/core/Maths/math.color";
 import { ActionManager } from "@babylonjs/core/Actions/actionManager";
 import { ExecuteCodeAction } from "@babylonjs/core/Actions/directActions";
+import { Sound } from "@babylonjs/core/Audio/sound.js";
 import "@babylonjs/loaders/glTF"; // Required for loading .glb/.gltf
 import { GUIManager } from "./gui-manager.js";
 
@@ -29,6 +30,18 @@ class GLBScene {
     private ballSpeed: number = 0.4; // Base ball speed
     private isPaused: boolean = false; // Game pause state
     private guiManager: GUIManager; // GUI manager instance
+    
+    // Audio System Properties
+    private audioContext: AudioContext | null = null;
+    private boundaryHitSound: Sound | null = null;
+    private ballPaddleHitSound: Sound | null = null;
+    private ballWallBounceSound: Sound | null = null;
+    private scoreSound: Sound | null = null;
+    private pauseSound: Sound | null = null;
+    private lastBoundaryHitTime: number = 0;
+    private lastBallHitTime: number = 0;
+    private boundaryHitCooldown: number = 200; // ms between sounds
+    private ballHitCooldown: number = 100; // ms between ball hit sounds
 
     constructor(private canvas: HTMLCanvasElement) {
         this.engine = new Engine(this.canvas, true);
@@ -39,6 +52,7 @@ class GLBScene {
         this.setupLighting();
         this.setupCustomMaterials();
         this.setupResizeListener();
+        this.setupAudio();
         this.setupScene();
     }
 
@@ -46,6 +60,310 @@ class GLBScene {
         window.addEventListener("resize", () => {
             this.engine.resize();
         });
+    }
+
+    private setupAudio(): void {
+        try {
+            // Initialize Web Audio Context
+            this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+            console.log("🔊 Audio context initialized");
+
+            // Handle browser autoplay policies - audio context may start suspended
+            if (this.audioContext.state === 'suspended') {
+                console.log("🔊 Audio context is suspended, will resume on first user interaction");
+                
+                // Set up one-time user interaction listener to unlock audio
+                const unlockAudio = () => {
+                    if (this.audioContext && this.audioContext.state === 'suspended') {
+                        this.audioContext.resume().then(() => {
+                            console.log("🔊 Audio context resumed successfully");
+                            // Remove the audio prompt once audio is activated
+                            const audioPrompt = document.getElementById('audioPrompt');
+                            if (audioPrompt) {
+                                audioPrompt.style.display = 'none';
+                            }
+                        });
+                    }
+                    // Remove the listener after first use
+                    document.removeEventListener('click', unlockAudio);
+                    document.removeEventListener('keydown', unlockAudio);
+                };
+                
+                document.addEventListener('click', unlockAudio);
+                document.addEventListener('keydown', unlockAudio);
+            }
+
+            // Generate and create sound effects
+            this.createSoundEffects();
+            
+            // Setup test audio button
+            this.setupTestAudioButton();
+        } catch (error) {
+            console.warn("⚠️ Audio initialization failed:", error);
+            console.warn("⚠️ Audio features will be disabled");
+        }
+    }
+
+    private createSoundEffects(): void {
+        if (!this.audioContext) return;
+
+        // Instead of complex Babylon.js Sound objects, we'll use direct Web Audio API
+        // This eliminates the blob conversion issues
+        console.log("🔊 Setting up direct Web Audio API sound system");
+        console.log("🔊 All sound effects ready (using direct Web Audio API)");
+    }
+
+    private createBeepSound(frequency: number, duration: number, volume: number): Sound {
+        // Create a simple beep using Web Audio API and convert to Babylon.js Sound
+        const sampleRate = 44100;
+        const numSamples = sampleRate * duration;
+        const audioBuffer = this.audioContext!.createBuffer(1, numSamples, sampleRate);
+        const channelData = audioBuffer.getChannelData(0);
+
+        // Generate sine wave with envelope
+        for (let i = 0; i < numSamples; i++) {
+            const t = i / sampleRate;
+            const envelope = Math.sin(Math.PI * t / duration); // Simple envelope
+            channelData[i] = Math.sin(2 * Math.PI * frequency * t) * envelope * volume;
+        }
+
+        // Convert to WAV blob and create Babylon.js Sound
+        const wavBlob = this.audioBufferToWav(audioBuffer);
+        const url = URL.createObjectURL(wavBlob);
+        
+        return new Sound("beep", url, this.scene, null, {
+            volume: volume,
+            playbackRate: 1.0,
+            loop: false
+        });
+    }
+
+    private createChordSound(frequencies: number[], duration: number, volume: number): Sound {
+        const sampleRate = 44100;
+        const numSamples = sampleRate * duration;
+        const audioBuffer = this.audioContext!.createBuffer(1, numSamples, sampleRate);
+        const channelData = audioBuffer.getChannelData(0);
+
+        // Generate chord (multiple frequencies)
+        for (let i = 0; i < numSamples; i++) {
+            const t = i / sampleRate;
+            const envelope = Math.sin(Math.PI * t / duration); // Simple envelope
+            
+            let sample = 0;
+            frequencies.forEach(freq => {
+                sample += Math.sin(2 * Math.PI * freq * t) / frequencies.length;
+            });
+            
+            channelData[i] = sample * envelope * volume;
+        }
+
+        const wavBlob = this.audioBufferToWav(audioBuffer);
+        const url = URL.createObjectURL(wavBlob);
+        
+        return new Sound("chord", url, this.scene, null, {
+            volume: volume,
+            playbackRate: 1.0,
+            loop: false
+        });
+    }
+
+    private audioBufferToWav(audioBuffer: AudioBuffer): Blob {
+        const numChannels = audioBuffer.numberOfChannels;
+        const sampleRate = audioBuffer.sampleRate;
+        const format = 1; // PCM
+        const bitDepth = 16;
+
+        const bytesPerSample = bitDepth / 8;
+        const blockAlign = numChannels * bytesPerSample;
+        const byteRate = sampleRate * blockAlign;
+        const dataLength = audioBuffer.length * blockAlign;
+
+        const buffer = new ArrayBuffer(44 + dataLength);
+        const view = new DataView(buffer);
+
+        // WAV header
+        const writeString = (offset: number, string: string) => {
+            for (let i = 0; i < string.length; i++) {
+                view.setUint8(offset + i, string.charCodeAt(i));
+            }
+        };
+
+        writeString(0, 'RIFF');
+        view.setUint32(4, 36 + dataLength, true);
+        writeString(8, 'WAVE');
+        writeString(12, 'fmt ');
+        view.setUint32(16, 16, true);
+        view.setUint16(20, format, true);
+        view.setUint16(22, numChannels, true);
+        view.setUint32(24, sampleRate, true);
+        view.setUint32(28, byteRate, true);
+        view.setUint16(32, blockAlign, true);
+        view.setUint16(34, bitDepth, true);
+        writeString(36, 'data');
+        view.setUint32(40, dataLength, true);
+
+        // Convert float samples to PCM
+        const channelData = audioBuffer.getChannelData(0);
+        let offset = 44;
+        for (let i = 0; i < channelData.length; i++) {
+            const sample = Math.max(-1, Math.min(1, channelData[i]));
+            view.setInt16(offset, sample * 0x7FFF, true);
+            offset += 2;
+        }
+
+        return new Blob([buffer], { type: 'audio/wav' });
+    }
+
+    private playBoundaryHitSound(): void {
+        const currentTime = Date.now();
+        
+        // Prevent sound spam by using cooldown
+        if (currentTime - this.lastBoundaryHitTime < this.boundaryHitCooldown) {
+            return;
+        }
+        
+        this.playDirectBeep(800, 0.1, 0.3); // Sharp beep: 800Hz, 0.1s, 30% volume
+        this.lastBoundaryHitTime = currentTime;
+        console.log("🔊 Boundary hit sound played");
+    }
+
+    private playBallHitSound(): void {
+        const currentTime = Date.now();
+        
+        // Prevent sound spam by using cooldown
+        if (currentTime - this.lastBallHitTime < this.ballHitCooldown) {
+            return;
+        }
+        
+        this.playDirectBeep(400, 0.15, 0.4); // Pong sound: 400Hz, 0.15s, 40% volume
+        this.lastBallHitTime = currentTime;
+        console.log("🔊 Ball hit paddle sound played");
+    }
+
+    private playBallWallBounceSound(): void {
+        this.playDirectBeep(600, 0.1, 0.25); // Wall bounce: 600Hz, 0.1s, 25% volume
+        console.log("🔊 Ball wall bounce sound played");
+    }
+
+    private playScoreSound(): void {
+        this.playDirectChord([523, 659, 784], 0.8, 0.5); // Score chord: C-E-G, 0.8s, 50% volume
+        console.log("🔊 Score sound played");
+    }
+
+    private playPauseSound(): void {
+        this.playDirectBeep(200, 0.2, 0.2); // Pause tone: 200Hz, 0.2s, 20% volume
+        console.log("🔊 Pause sound played");
+    }
+
+    private setupTestAudioButton(): void {
+        // Setup test audio button after page load
+        setTimeout(() => {
+            const testBtn = document.getElementById('testAudioBtn');
+            if (testBtn) {
+                testBtn.addEventListener('click', () => {
+                    console.log("🔊 Testing all audio sounds...");
+                    
+                    // First test a simple Web Audio API beep
+                    this.testSimpleBeep();
+                    
+                    // Test all sounds with delays
+                    setTimeout(() => this.playBoundaryHitSound(), 500);
+                    setTimeout(() => this.playBallHitSound(), 1000);
+                    setTimeout(() => this.playBallWallBounceSound(), 1500);
+                    setTimeout(() => this.playScoreSound(), 2000);
+                    setTimeout(() => this.playPauseSound(), 3000);
+                    
+                    console.log("🔊 Audio test sequence started - check console for sound messages");
+                });
+            }
+        }, 1000);
+    }
+
+    private testSimpleBeep(): void {
+        // Test a simple direct Web Audio API beep
+        if (!this.audioContext) {
+            console.log("⚠️ No audio context available");
+            return;
+        }
+        
+        try {
+            console.log("🔊 Testing simple Web Audio API beep...");
+            console.log("🔊 Audio context state:", this.audioContext.state);
+            
+            // Create a simple oscillator
+            const oscillator = this.audioContext.createOscillator();
+            const gainNode = this.audioContext.createGain();
+            
+            oscillator.connect(gainNode);
+            gainNode.connect(this.audioContext.destination);
+            
+            oscillator.frequency.setValueAtTime(440, this.audioContext.currentTime); // A4 note
+            oscillator.type = 'sine';
+            
+            gainNode.gain.setValueAtTime(0.1, this.audioContext.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.001, this.audioContext.currentTime + 0.5);
+            
+            oscillator.start(this.audioContext.currentTime);
+            oscillator.stop(this.audioContext.currentTime + 0.5);
+            
+            console.log("🔊 Simple beep test - should hear a 440Hz tone");
+        } catch (error) {
+            console.error("⚠️ Simple beep test failed:", error);
+        }
+    }
+
+    private playDirectBeep(frequency: number, duration: number, volume: number): void {
+        if (!this.audioContext) return;
+        
+        try {
+            const oscillator = this.audioContext.createOscillator();
+            const gainNode = this.audioContext.createGain();
+            
+            oscillator.connect(gainNode);
+            gainNode.connect(this.audioContext.destination);
+            
+            oscillator.frequency.setValueAtTime(frequency, this.audioContext.currentTime);
+            oscillator.type = 'sine';
+            
+            // Create envelope for more natural sound
+            gainNode.gain.setValueAtTime(0, this.audioContext.currentTime);
+            gainNode.gain.linearRampToValueAtTime(volume, this.audioContext.currentTime + 0.01);
+            gainNode.gain.exponentialRampToValueAtTime(0.001, this.audioContext.currentTime + duration);
+            
+            oscillator.start(this.audioContext.currentTime);
+            oscillator.stop(this.audioContext.currentTime + duration);
+        } catch (error) {
+            console.warn("⚠️ Failed to play beep:", error);
+        }
+    }
+
+    private playDirectChord(frequencies: number[], duration: number, volume: number): void {
+        if (!this.audioContext) return;
+        
+        try {
+            // Play multiple frequencies simultaneously to create a chord
+            frequencies.forEach(frequency => {
+                const oscillator = this.audioContext!.createOscillator();
+                const gainNode = this.audioContext!.createGain();
+                
+                oscillator.connect(gainNode);
+                gainNode.connect(this.audioContext!.destination);
+                
+                oscillator.frequency.setValueAtTime(frequency, this.audioContext!.currentTime);
+                oscillator.type = 'sine';
+                
+                // Reduce volume per oscillator to prevent clipping
+                const adjustedVolume = volume / frequencies.length;
+                gainNode.gain.setValueAtTime(0, this.audioContext!.currentTime);
+                gainNode.gain.linearRampToValueAtTime(adjustedVolume, this.audioContext!.currentTime + 0.01);
+                gainNode.gain.exponentialRampToValueAtTime(0.001, this.audioContext!.currentTime + duration);
+                
+                oscillator.start(this.audioContext!.currentTime);
+                oscillator.stop(this.audioContext!.currentTime + duration);
+            });
+        } catch (error) {
+            console.warn("⚠️ Failed to play chord:", error);
+        }
     }
 
 private setupCamera(): void {
@@ -151,9 +469,11 @@ private setCameraToImageOnePosition(): void {
         
         if (this.isPaused) {
             this.guiManager.createPauseMenu();
+            this.playPauseSound();
             console.log("⏸️ Game paused - Press ESC to resume");
         } else {
             this.guiManager.removePauseMenu();
+            this.playPauseSound();
             console.log("▶️ Game resumed");
         }
     }
@@ -504,6 +824,7 @@ private updatePaddlePosition(paddle: AbstractMesh, inputDirection: number): void
     // Apply movement based on collision detection
     if (collisionDetected) {
         console.log(`🚧 ${paddle.name} blocked by ${hitWallName} - staying at Z: ${paddle.position.z.toFixed(2)}`);
+        this.playBoundaryHitSound();
         // Don't move - collision detected
     } else {
         // Safe to move
@@ -845,6 +1166,9 @@ private debugVisualizeFloorBounds(): void {
     }
 
     public dispose(): void {
+        // Dispose audio resources
+        if (this.audioContext) this.audioContext.close();
+        
         this.guiManager.dispose();
         this.scene.dispose();
         this.engine.dispose();
@@ -897,6 +1221,7 @@ private debugVisualizeFloorBounds(): void {
             if (ball.position.z + ballRadius >= floorBounds.maximumWorld.z || 
                 ball.position.z - ballRadius <= floorBounds.minimumWorld.z) {
                 this.ballVelocity.z *= -1; // Reverse Z velocity
+                this.playBallWallBounceSound();
                 console.log("⚽ Ball bounced off Z wall");
             }
         }
@@ -913,6 +1238,7 @@ private debugVisualizeFloorBounds(): void {
         if (leftPaddle && this.ballCollidesWithPaddle(ball, leftPaddle, ballRadius)) {
             this.ballVelocity.x = Math.abs(this.ballVelocity.x); // Ensure ball moves right
             this.addPaddleInfluence(ball, leftPaddle);
+            this.playBallHitSound();
             console.log("⚽ Ball hit left paddle");
         }
 
@@ -920,15 +1246,18 @@ private debugVisualizeFloorBounds(): void {
         if (rightPaddle && this.ballCollidesWithPaddle(ball, rightPaddle, ballRadius)) {
             this.ballVelocity.x = -Math.abs(this.ballVelocity.x); // Ensure ball moves left
             this.addPaddleInfluence(ball, rightPaddle);
+            this.playBallHitSound();
             console.log("⚽ Ball hit right paddle");
         }
 
         // Check if ball went past paddles (scoring)
         if (ball.position.x < -25) {
             console.log("🎯 Right player scores!");
+            this.playScoreSound();
             this.resetBall();
         } else if (ball.position.x > 25) {
             console.log("🎯 Left player scores!");
+            this.playScoreSound();
             this.resetBall();
         }
     }
