@@ -2,6 +2,7 @@ export class GUIManager {
     private pauseMenu: HTMLElement | null = null;
     private startMenu: HTMLElement | null = null;
     private countdownEl: HTMLElement | null = null;
+    private scoreFlashEl: HTMLElement | null = null;
     // Default assets/config
     private defaultTitleImageUrl?: string;
 
@@ -417,6 +418,49 @@ export class GUIManager {
         if (this.countdownEl) {
             this.countdownEl.remove();
             this.countdownEl = null;
+        }
+    }
+
+    // ===== Score Flash Overlay =====
+    public showScoreFlash(options: { scorer: 'left' | 'right'; leftScore: number; rightScore: number; imageUrl?: string; durationMs?: number }): void {
+        // Clear existing first
+        this.clearScoreFlash();
+        this.scoreFlashEl = document.createElement('div');
+        this.scoreFlashEl.id = 'scoreFlashOverlay';
+        const { scorer, leftScore, rightScore, imageUrl } = options;
+        const duration = options.durationMs ?? 1800;
+        const titleText = scorer === 'left' ? 'LEFT SCORES!' : 'RIGHT SCORES!';
+        const content = imageUrl ? `<img src="${imageUrl}" alt="Score" style="max-height:160px; filter: drop-shadow(0 0 12px #00ffff);"/>` : `<div style="font-size:64px;font-weight:900;letter-spacing:3px;">${titleText}</div>`;
+        this.scoreFlashEl.style.cssText = `
+            position:fixed;top:0;left:0;width:100%;height:100%;
+            display:flex;align-items:center;justify-content:center;
+            z-index:10005;pointer-events:none;
+            background:radial-gradient(circle at center, rgba(0,255,255,0.15), rgba(0,0,0,0.0));
+            font-family:'Orbitron','Courier New',monospace;color:#00ffff;
+            animation: scoreFlashFade ${duration}ms ease-out forwards;
+        `;
+        this.scoreFlashEl.innerHTML = `
+            <div style="text-align:center;">
+                ${content}
+                <div style="margin-top:12px;font-size:20px;letter-spacing:2px;text-shadow:0 0 8px #00ffff;">
+                    ${leftScore} : ${rightScore}
+                </div>
+            </div>`;
+        // Inject keyframes if not present
+        if (!document.getElementById('scoreFlashKeyframes')) {
+            const style = document.createElement('style');
+            style.id = 'scoreFlashKeyframes';
+            style.textContent = `@keyframes scoreFlashFade {0%{opacity:0;}10%{opacity:1;}90%{opacity:1;}100%{opacity:0;}}`;
+            document.head.appendChild(style);
+        }
+        document.body.appendChild(this.scoreFlashEl);
+        setTimeout(() => this.clearScoreFlash(), duration);
+    }
+
+    public clearScoreFlash(): void {
+        if (this.scoreFlashEl) {
+            this.scoreFlashEl.remove();
+            this.scoreFlashEl = null;
         }
     }
 }
