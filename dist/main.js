@@ -1,3 +1,6 @@
+// ===========================================
+//          HEADERS                           
+// ===========================================
 import { Engine } from "@babylonjs/core/Engines/engine";
 import { Scene } from "@babylonjs/core/scene";
 import { SceneLoader } from "@babylonjs/core/Loading/sceneLoader";
@@ -13,11 +16,89 @@ import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { Color3 } from "@babylonjs/core/Maths/math.color";
 import { Sound } from "@babylonjs/core/Audio/sound.js";
-import "@babylonjs/loaders/glTF"; // Required for loading .glb/.gltf
 import { GUIManager } from "./gui-manager.js";
-class GLBScene {
+import "@babylonjs/loaders/glTF"; // Required for loading .glb/.gltf
+// ===========================================
+// *******************************************
+// ===========================================
+// =====================================
+// MAIN GAME MANAGER - Orchestrator
+// =====================================
+class PongGameManager {
+    constructor(canvas) {
+        this.isRunning = false;
+        this.lastTime = 0;
+        // Initialize all systems
+        this.renderEngine = new RenderEngine(canvas); // 🎨 The "visual display" chef
+        this.inputManager = new InputManager(); // 🎮 The "order taker" (keyboard/mouse)
+        this.physicsSystem = new PhysicsSystem(); // ⚡ The "movement & collision" chef
+        this.audioManager = new AudioManager(); // 🔊 The "sound effects" DJ
+        this.uiManager = new UIManager(); // 🖥️ The "menu display" manager
+        this.scoreManager = new ScoreManager(); // 🥅 The "score keeper" manager
+        // Initialize game state manager with references to all systems
+        this.gameState = new GameStateManager({
+            renderEngine: this.renderEngine,
+            inputManager: this.inputManager,
+            physicsSystem: this.physicsSystem,
+            audioManager: this.audioManager,
+            uiManager: this.uiManager,
+            scoreManager: this.scoreManager
+        });
+        this.initialize();
+    }
+    async initialize() {
+        console.log("🎮 Initializing Pong Game Manager...");
+        // Initialize all systems in order
+        await this.renderEngine.initialize();
+        this.inputManager.initialize();
+        this.physicsSystem.initialize();
+        this.audioManager.initialize();
+        this.uiManager.initialize();
+        this.scoreManager.initialize();
+        // Hook score change to UI flash
+        this.scoreManager.setScoreChangeCallback(({ leftScore, rightScore, scorer }) => {
+            this.uiManager.showScoreFlash({ scorer, leftScore, rightScore });
+        });
+        // Start with menu state
+        this.gameState.setState('menu');
+        this.startGameLoop();
+        console.log("✅ Game Manager initialized successfully!");
+    }
+    startGameLoop() {
+        this.isRunning = true;
+        const gameLoop = (timestamp) => {
+            if (!this.isRunning)
+                return;
+            const deltaTime = timestamp - this.lastTime; // 
+            this.lastTime = timestamp;
+            // Update all systems
+            this.gameState.update(deltaTime);
+            this.physicsSystem.update(deltaTime);
+            this.renderEngine.update(deltaTime);
+            this.uiManager.update(deltaTime);
+            // Render
+            this.renderEngine.render();
+            this.uiManager.render();
+            requestAnimationFrame(gameLoop);
+        };
+        requestAnimationFrame(gameLoop);
+    }
+    dispose() {
+        this.isRunning = false;
+        this.renderEngine.dispose();
+        this.inputManager.dispose();
+        this.physicsSystem.dispose();
+        this.audioManager.dispose();
+        this.uiManager.dispose();
+    }
+}
+// =====================================
+// RENDER ENGINE - 3D Babylon.js Layer
+// =====================================
+class RenderEngine {
     constructor(canvas) {
         this.canvas = canvas;
+        this.gameObjects = new Map();
         this.cameraLocked = false;
         this.ballVelocity = new Vector3(0.3, 0, 0.2); // Ball velocity in X and Z directions
         this.ballSpeed = 0.4; // Base ball speed
@@ -36,17 +117,35 @@ class GLBScene {
         this.engine = new Engine(this.canvas, true);
         this.scene = new Scene(this.engine);
         this.guiManager = new GUIManager();
+    }
+    async initialize() {
+        console.log("🎨 Initializing Render Engine...");
         this.setupCamera();
         this.setupLighting();
         this.setupCustomMaterials();
         this.setupResizeListener();
         this.setupAudio();
-        this.setupScene();
-    }
-    setupResizeListener() {
-        window.addEventListener("resize", () => {
-            this.engine.resize();
+        await this.loadAssets();
+        // Start render loop
+        this.engine.runRenderLoop(() => {
+            this.scene.render();
         });
+        console.log("✅ Render Engine initialized!");
+    }
+    setupCamera() {
+        // Create ArcRotateCamera with desired position
+        this.camera = new ArcRotateCamera("camera", -1.569, 0.593, 43.461, Vector3.Zero(), this.scene);
+        // Lock the camera - disable all controls
+        this.camera.attachControl(this.canvas, false);
+        this.camera.inputs.clear();
+        this.scene.activeCamera = this.camera;
+        console.log("📷 Camera locked at desired position");
+    }
+    setupLighting() {
+        this.setupStrongLightSystem();
+    }
+    setupCustomMaterials() {
+        this.createBackgroundLayers();
     }
     setupAudio() {
         try {
@@ -274,31 +373,55 @@ class GLBScene {
             console.warn("⚠️ Failed to play chord:", error);
         }
     }
-    setupCamera() {
-        // Create ArcRotateCamera with your desired exact position
-        const camera = new ArcRotateCamera("camera", -1.569, 0.593, 43.461, Vector3.Zero(), this.scene);
-        // Lock the camera - disable all controls
-        camera.attachControl(this.canvas, false); // false = no control attachment
-        // Disable all camera movements
-        camera.inputs.clear(); // Remove all input handlers
-        this.scene.activeCamera = camera;
-        console.log("📷 Camera locked at desired position");
+    async loadAssets() {
+        console.log("📦 Loading game assets...");
+        try {
+            const container = await SceneLoader.LoadAssetContainerAsync("/public/models/", "game.glb", this.scene);
+            container.addAllToScene();
+            console.log("📦 Assets loaded successfully");
+            this.initializeGameObjects();
+            this.positionObjects();
+            this.createStrongLightingForGameObjects();
+            this.createInvisibleWalls();
+            this.setupPaddleControls();
+            this.initializeBallSystem();
+            this.setupInteractiveCoordinateDisplay();
+        }
+        catch (error) {
+            console.log("🔍 Trying alternative path...");
+            try {
+                const container = await SceneLoader.LoadAssetContainerAsync("./public/models/", "game.glb", this.scene);
+                container.addAllToScene();
+                console.log("📦 Assets loaded with alternative path");
+                this.initializeGameObjects();
+                this.positionObjects();
+                this.createStrongLightingForGameObjects();
+                this.createInvisibleWalls();
+                this.setupPaddleControls();
+                this.initializeBallSystem();
+                this.setupInteractiveCoordinateDisplay();
+            }
+            catch (err2) {
+                console.error("❌ Failed to load assets:", err2);
+            }
+        }
     }
-    // Alternative: Set specific camera position immediately during setup
-    setCameraToImageOnePosition() {
-        const camera = this.scene.activeCamera;
-        if (!camera)
-            return;
-        // Based on your first image, it looks like you want a more elevated, angled view
-        // Try these values (adjust as needed):
-        camera.setTarget(new Vector3(0, 0, 0)); // Look at center of game area
-        camera.alpha = -Math.PI / 4; // 45 degrees from side
-        camera.beta = Math.PI / 3; // More elevated angle
-        camera.radius = 12; // Slightly further back
-        console.log("📷 Camera positioned for Image 1 style view");
+    initializeGameObjects() {
+        const leftPaddleMesh = this.scene.getMeshByName('paddleLeft');
+        const rightPaddleMesh = this.scene.getMeshByName('paddleRight');
+        const ballMesh = this.scene.getMeshByName('pongBall');
+        if (leftPaddleMesh) {
+            this.gameObjects.set('leftPaddle', new GameObject3D(leftPaddleMesh, 'paddle'));
+        }
+        if (rightPaddleMesh) {
+            this.gameObjects.set('rightPaddle', new GameObject3D(rightPaddleMesh, 'paddle'));
+        }
+        if (ballMesh) {
+            this.gameObjects.set('ball', new GameObject3D(ballMesh, 'ball'));
+        }
+        console.log(`🎯 Initialized ${this.gameObjects.size} game objects`);
     }
-    positionObjectsAtCoordinates() {
-        // Define object positions based on the exact mesh names and coordinates you provided
+    positionObjects() {
         const objectPositions = {
             'paddleLeft': new Vector3(-20.28, 1.00, 0.00),
             'pongBall': new Vector3(0.00, 0.78, 0.00),
@@ -306,7 +429,6 @@ class GLBScene {
             'paddleRight': new Vector3(20.28, 1.00, 0.00),
             'floorPlane': new Vector3(0.00, 0.00, 0.00)
         };
-        // Position each specific mesh by finding it in the scene
         Object.keys(objectPositions).forEach(meshName => {
             const mesh = this.scene.getMeshByName(meshName);
             if (mesh) {
@@ -314,24 +436,19 @@ class GLBScene {
                 mesh.position.copyFrom(pos);
                 console.log(`📍 Positioned ${meshName} at (${pos.x.toFixed(2)}, ${pos.y.toFixed(2)}, ${pos.z.toFixed(2)})`);
             }
-            else {
-                console.warn(`⚠️ Mesh not found in GLB: ${meshName}`);
-            }
         });
     }
-    // private lockCameraToObjectCoordinates(): void {
-    //     const camera = this.scene.activeCamera as ArcRotateCamera;
-    //     // Lock camera to center of the game area where objects are positioned
-    //     // Objects span from x: -20.28 to 20.28, centered at y: 0.78 (ball height)
-    //     camera.setTarget(new Vector3(0, 0.78, 0)); // Center of the game area
-    //     camera.alpha = Math.PI / 2; // 90 degree rotation to make paddles left/right
-    //     camera.beta = 0; // Top-down view (straight down)
-    //     camera.radius = 43; // Zoomed in closer to the playing field
-    //     // Disable camera controls to lock it in place
-    //     camera.detachControl();
-    //     console.log("📹 Camera locked to top-down view - paddles left/right");
-    //     console.log("📹 Camera target: (0.00, 0.78, 0.00) - Center of game area");
-    // }
+    createStrongLightingForGameObjects() {
+        const paddleLeft = this.scene.getMeshByName('paddleLeft');
+        const paddleRight = this.scene.getMeshByName('paddleRight');
+        if (paddleLeft) {
+            this.makePaddleEmitLight(paddleLeft, new Color3(0.2, 0.8, 1.0), 'left');
+        }
+        if (paddleRight) {
+            this.makePaddleEmitLight(paddleRight, new Color3(1.0, 0.4, 0.1), 'right');
+        }
+        console.log("💡 Strong light emission system created for paddles");
+    }
     setupInteractiveCoordinateDisplay() {
         // Add click event to display object coordinates
         this.scene.onPointerObservable.add((pointerInfo) => {
@@ -384,90 +501,6 @@ class GLBScene {
             });
             return;
         }
-        // Track key states
-        window.addEventListener('keydown', (event) => {
-            const key = event.key.toLowerCase();
-            inputMap[key] = true;
-            console.log(`🔽 Key pressed: ${key}`);
-            // Handle pause toggle with Escape key
-            if (event.key === 'Escape') {
-                this.togglePause();
-                return; // Don't process other inputs when toggling pause
-            }
-            // Handle camera lock toggle
-            if (key === 'l') {
-                this.toggleCameraLock();
-            }
-        });
-        window.addEventListener('keyup', (event) => {
-            const key = event.key.toLowerCase();
-            inputMap[key] = false;
-            console.log(`🔼 Key released: ${key}`);
-        });
-        // Update paddles each frame
-        this.scene.registerBeforeRender(() => {
-            // Skip updates if game is paused
-            if (this.isPaused)
-                return;
-            const leftPaddle = this.scene.getMeshByName('paddleLeft');
-            const rightPaddle = this.scene.getMeshByName('paddleRight');
-            if (leftPaddle) {
-                let leftInput = 0;
-                if (inputMap['a'])
-                    leftInput -= 1; // Left on Z-axis
-                if (inputMap['d'])
-                    leftInput += 1; // Right on Z-axis
-                if (leftInput !== 0) {
-                    console.log(`⬅️ Left paddle input: ${leftInput}`);
-                }
-                this.updatePaddlePosition(leftPaddle, leftInput);
-            }
-            if (rightPaddle) {
-                let rightInput = 0;
-                if (inputMap['arrowright'])
-                    rightInput -= 1; // Right on Z-axis
-                if (inputMap['arrowleft'])
-                    rightInput += 1; // Left on Z-axis
-                if (rightInput !== 0) {
-                    console.log(`➡️ Right paddle input: ${rightInput}`);
-                }
-                this.updatePaddlePosition(rightPaddle, rightInput);
-            }
-        });
-        console.log("🎮 Paddle controls initialized! Use A/D for left, Arrow Left/Right for right");
-        console.log("📹 Camera controls: Press 'L' to lock/unlock camera");
-    }
-    toggleCameraLock() {
-        const camera = this.scene.activeCamera;
-        if (!this.cameraLocked) {
-            // Lock camera to ideal 3D viewing angle
-            this.lockCameraToIdealView();
-            this.cameraLocked = true;
-            console.log("📹 Camera LOCKED - Press 'L' to unlock");
-        }
-        else {
-            // Unlock camera - restore controls
-            camera.attachControl(this.canvas, true);
-            this.cameraLocked = false;
-            console.log("📹 Camera UNLOCKED - Press 'L' to lock");
-        }
-    }
-    lockCameraToIdealView() {
-        const camera = this.scene.activeCamera;
-        // Find game center for camera target
-        const gameCenter = new Vector3(0, 0.78, 0); // Center of game area at ball height
-        // Set ideal 3D viewing angle - slightly elevated and angled
-        camera.setTarget(gameCenter);
-        camera.alpha = Math.PI / 2; // 90 degrees - looking across the field
-        camera.beta = Math.PI / 3; // 60 degrees - elevated view for nice 3D perspective
-        camera.radius = 35; // Distance from target - close enough to see action
-        // Disable camera controls when locked
-        camera.detachControl();
-        console.log("📹 Camera locked to ideal 3D view:");
-        console.log(`  Target: (${gameCenter.x}, ${gameCenter.y}, ${gameCenter.z})`);
-        console.log(`  Alpha: ${(camera.alpha * 180 / Math.PI).toFixed(1)}°`);
-        console.log(`  Beta: ${(camera.beta * 180 / Math.PI).toFixed(1)}°`);
-        console.log(`  Distance: ${camera.radius}`);
     }
     createInvisibleWalls() {
         const floorPlane = this.scene.getMeshByName('floorPlane');
@@ -729,113 +762,75 @@ class GLBScene {
             backRight.dispose();
         }, 5000);
     }
-    setupLighting() {
-        this.setupStrongLightSystem();
-    }
     setupStrongLightSystem() {
         // We'll create strong emissive lighting after the GLB is loaded
         console.log("💡 Preparing strong light emission system with shadows");
     }
     makePaddleEmitLight(parentMesh, lightColor, side) {
-        // First, make the paddle itself emit light visually
         const emissiveMaterial = new PBRMaterial(`${parentMesh.name}_emissive`, this.scene);
-        // Set base color to match the light emission for better color harmony
         if (side === 'left') {
-            emissiveMaterial.albedoColor = new Color3(0.05, 0.15, 0.20); // Dark cyan-blue base
+            emissiveMaterial.albedoColor = new Color3(0.05, 0.15, 0.20);
         }
         else {
-            emissiveMaterial.albedoColor = new Color3(0.20, 0.08, 0.02); // Dark orange-red base
+            emissiveMaterial.albedoColor = new Color3(0.20, 0.08, 0.02);
         }
         emissiveMaterial.emissiveColor = lightColor;
-        emissiveMaterial.emissiveIntensity = 2.0; // Strong emissive glow
+        emissiveMaterial.emissiveIntensity = 2.0;
         emissiveMaterial.roughness = 0.1;
         emissiveMaterial.metallicF0Factor = 0.8;
-        // Apply the emissive material to make paddle glow
         parentMesh.material = emissiveMaterial;
-        // Create a very strong point light for dramatic shadows
-        const lightOffset = new Vector3(0, 0.5, 0); // Position above paddle center
+        const lightOffset = new Vector3(0, 0.5, 0);
         const strongLight = new PointLight(`${parentMesh.name}_strongLight`, parentMesh.position.add(lightOffset), this.scene);
-        // VERY strong intensity for dramatic effect
         strongLight.diffuse = lightColor;
         strongLight.specular = lightColor;
-        strongLight.intensity = 15.0; // Very high intensity
-        strongLight.range = 50.0; // Large range, we'll block it with invisible objects
-        strongLight.falloffType = PointLight.FALLOFF_PHYSICAL; // Realistic falloff
-        // Parent the light to the paddle
+        strongLight.intensity = 15.0;
+        strongLight.range = 50.0;
+        strongLight.falloffType = PointLight.FALLOFF_PHYSICAL;
         strongLight.parent = parentMesh;
         strongLight.position.copyFrom(lightOffset);
-        // Create shadow generator for dramatic shadows
         const shadowGenerator = new ShadowGenerator(1024, strongLight);
         shadowGenerator.useBlurExponentialShadowMap = true;
         shadowGenerator.blurKernel = 4;
         shadowGenerator.bias = 0.0001;
-        shadowGenerator.setDarkness(0.8); // Very dark shadows
-        // Add all meshes as shadow casters
+        shadowGenerator.setDarkness(0.8);
         this.scene.meshes.forEach(mesh => {
             if (mesh.name !== "skybox" && mesh !== parentMesh) {
                 shadowGenerator.addShadowCaster(mesh);
             }
         });
-        // Enable the floor to receive shadows
         const floorPlane = this.scene.getMeshByName('floorPlane');
         if (floorPlane) {
             floorPlane.receiveShadows = true;
         }
-        // Create invisible light blocker
         this.createLightBlocker(parentMesh, side);
-        console.log(`💡 Created strong light emission for ${parentMesh.name} (${side} side)`);
     }
     createLightBlocker(parentMesh, side) {
-        // Create invisible planes that block light from traveling too far
-        const blockerDistance = 6.0; // Distance from paddle where we block light
-        // Create multiple blocker planes around the paddle
+        const blockerDistance = 6.0;
         const blockerPositions = [
-            new Vector3(0, 0, blockerDistance), // Front blocker
-            new Vector3(0, 0, -blockerDistance), // Back blocker
-            new Vector3(side === 'left' ? blockerDistance : -blockerDistance, 0, 0), // Side blocker
+            new Vector3(0, 0, blockerDistance),
+            new Vector3(0, 0, -blockerDistance),
+            new Vector3(side === 'left' ? blockerDistance : -blockerDistance, 0, 0),
         ];
         blockerPositions.forEach((offset, index) => {
             const blocker = MeshBuilder.CreatePlane(`${parentMesh.name}_lightBlocker_${index}`, {
                 size: 15
             }, this.scene);
-            // Position the blocker
             blocker.position = parentMesh.position.add(offset);
-            // Make it invisible but still block light
             const blockerMaterial = new StandardMaterial(`${parentMesh.name}_blockerMaterial_${index}`, this.scene);
-            blockerMaterial.alpha = 0.0; // Completely transparent
+            blockerMaterial.alpha = 0.0;
             blockerMaterial.disableLighting = true;
             blocker.material = blockerMaterial;
-            // Make it non-interactive for gameplay
             blocker.isPickable = false;
             blocker.checkCollisions = false;
-            // Parent to paddle so it moves with it
             blocker.parent = parentMesh;
             blocker.position.copyFrom(offset);
-            // Orient the blocker correctly
             if (Math.abs(offset.z) > Math.abs(offset.x)) {
-                // Front/back blocker - face the paddle
                 blocker.rotation.y = offset.z > 0 ? 0 : Math.PI;
             }
             else {
-                // Side blocker - face inward
                 blocker.rotation.y = offset.x > 0 ? -Math.PI / 2 : Math.PI / 2;
             }
         });
-        console.log(`🚧 Created light blockers for ${parentMesh.name}`);
-    }
-    createStrongLightingForGameObjects() {
-        // Create strong light emission for paddles only
-        const paddleLeft = this.scene.getMeshByName('paddleLeft');
-        const paddleRight = this.scene.getMeshByName('paddleRight');
-        if (paddleLeft) {
-            // Left paddle gets bright cyan-blue emission
-            this.makePaddleEmitLight(paddleLeft, new Color3(0.2, 0.8, 1.0), 'left');
-        }
-        if (paddleRight) {
-            // Right paddle gets bright orange-red emission
-            this.makePaddleEmitLight(paddleRight, new Color3(1.0, 0.4, 0.1), 'right');
-        }
-        console.log("💡 Strong light emission system created for paddles");
     }
     logAllObjectCoordinates() {
         console.log("📍 All Object Coordinates:");
@@ -845,9 +840,6 @@ class GLBScene {
                 console.log(`  ${mesh.name}: (${pos.x.toFixed(2)}, ${pos.y.toFixed(2)}, ${pos.z.toFixed(2)})`);
             }
         });
-    }
-    setupCustomMaterials() {
-        this.createBackgroundLayers();
     }
     createBackgroundLayers() {
         this.createSkybox();
@@ -876,57 +868,12 @@ class GLBScene {
             skybox.rotation.y += 0.001; // Increased rotation speed
         });
     }
-    setupScene() {
-        // Start render loop immediately so we can see the camera/lighting
-        this.engine.runRenderLoop(() => {
-            this.scene.render();
-        });
-        // ✅ Append entire .glb scene to the current scene
-        console.log("🔍 Attempting to load GLB from: /public/models/game.glb");
-        SceneLoader.LoadAssetContainerAsync("/public/models/", "game.glb", this.scene).then((container) => {
-            console.log("✅ GLB loaded successfully:", container);
-            container.addAllToScene();
-            console.log("📦 Added all meshes to scene");
-            // Position objects at their proper coordinates
-            this.positionObjectsAtCoordinates();
-            // Create strong light emission effects for game objects
-            this.createStrongLightingForGameObjects();
-            // Create invisible walls at floor edges
-            this.createInvisibleWalls();
-            // Setup paddle controls after GLB is loaded
-            this.setupPaddleControls();
-            // Initialize ball physics system
-            this.initializeBallSystem();
-            // Lock camera to object coordinates
-            // this.lockCameraToObjectCoordinates();
-            // Debug materials to check lighting compatibility
-            // this.debugObjectMaterials();
-        }).catch((err) => {
-            console.error("❌ Failed to load GLB scene:", err);
-            console.log("🔍 Trying alternative path: ./public/models/game.glb");
-            // Try alternative path
-            SceneLoader.LoadAssetContainerAsync("./public/models/", "game.glb", this.scene).then((container) => {
-                console.log("✅ GLB loaded with alternative path:", container);
-                container.addAllToScene();
-                console.log("📦 Added all meshes to scene");
-                // Position objects at their proper coordinates
-                this.positionObjectsAtCoordinates();
-                // Create strong light emission effects for game objects
-                this.createStrongLightingForGameObjects();
-                // Create invisible walls at floor edges
-                this.createInvisibleWalls();
-                // Setup paddle controls after GLB is loaded
-                this.setupPaddleControls();
-                // Initialize ball physics system
-                this.initializeBallSystem();
-                // Lock camera to object coordinates
-                // this.lockCameraToObjectCoordinates();
-                // Debug materials to check lighting compatibility
-                // this.debugObjectMaterials();
-            }).catch((err2) => {
-                console.error("❌ Alternative path also failed:", err2);
-            });
-        });
+    initializeBallSystem() {
+        const ball = this.scene.getMeshByName('pongBall');
+        if (!ball) {
+            console.warn("⚠️ Ball not found in scene");
+            return;
+        }
     }
     dispose() {
         // Dispose audio resources
@@ -936,79 +883,251 @@ class GLBScene {
         this.scene.dispose();
         this.engine.dispose();
     }
-    initializeBallSystem() {
-        const ball = this.scene.getMeshByName('pongBall');
-        if (!ball) {
-            console.warn("⚠️ Ball not found in scene");
-            return;
-        }
-        console.log("⚽ Initializing ball physics system");
-        // Start ball movement
-        this.scene.registerBeforeRender(() => {
-            this.updateBallPhysics();
+    setupResizeListener() {
+        window.addEventListener("resize", () => {
+            this.engine.resize();
         });
     }
-    updateBallPhysics() {
-        // Skip ball updates if game is paused
-        if (this.isPaused)
+    getGameObject(name) {
+        return this.gameObjects.get(name);
+    }
+    getMesh(name) {
+        return this.scene.getMeshByName(name);
+    }
+    getScene() {
+        return this.scene;
+    }
+    update(deltaTime) {
+        this.gameObjects.forEach(obj => obj.update(deltaTime));
+    }
+    render() {
+        // Rendering is handled by the engine's render loop
+    }
+}
+// =====================================
+// GAME OBJECT 3D WRAPPER
+// =====================================
+class GameObject3D {
+    constructor(mesh, type) {
+        this.mesh = mesh;
+        this.type = type;
+    }
+    get position() {
+        return this.mesh.position;
+    }
+    set position(pos) {
+        this.mesh.position.copyFrom(pos);
+    }
+    getBounds() {
+        this.mesh.computeWorldMatrix(true);
+        this.mesh.getBoundingInfo().update(this.mesh.getWorldMatrix());
+        return this.mesh.getBoundingInfo().boundingBox;
+    }
+    update(deltaTime) {
+        // Any per-frame updates for this object
+    }
+}
+// =====================================
+// PHYSICS SYSTEM
+// =====================================
+class PhysicsSystem {
+    constructor() {
+        this.ballVelocity = new Vector3(0.3, 0, 0.2);
+        this.ballSpeed = 18; // units per second
+        this.ballActive = false;
+        this.renderEngine = null;
+        this.scoreManager = null;
+        this.hasScored = false;
+    }
+    initialize() {
+        console.log("⚡ Physics system initialized");
+    }
+    setScoreManager(scoreManager) {
+        this.scoreManager = scoreManager;
+    }
+    checkHasScored() {
+        return this.hasScored;
+    }
+    resetScoredFlag() {
+        this.hasScored = false;
+    }
+    resetPaddlePositions() {
+        if (!this.renderEngine)
             return;
-        const ball = this.scene.getMeshByName('pongBall');
+        const leftPaddle = this.renderEngine.getMesh('paddleLeft');
+        const rightPaddle = this.renderEngine.getMesh('paddleRight');
+        if (leftPaddle) {
+            leftPaddle.position = new Vector3(-20.28, 1.00, 0.00);
+            console.log("🏓 Left paddle reset to starting position");
+        }
+        if (rightPaddle) {
+            rightPaddle.position = new Vector3(20.28, 1.00, 0.00);
+            console.log("🏓 Right paddle reset to starting position");
+        }
+    }
+    setRenderEngine(renderEngine) {
+        this.renderEngine = renderEngine;
+    }
+    startBall() {
+        if (!this.renderEngine)
+            return;
+        this.resetBallPosition();
+        this.startBallMovement();
+        this.ballActive = true;
+        console.log("🏐 Ball movement started");
+    }
+    resumeBall() {
+        if (!this.renderEngine)
+            return;
+        // Resume ball without resetting position
+        this.ballActive = true;
+        console.log("🏐 Ball movement resumed");
+    }
+    stopBall() {
+        this.ballActive = false;
+        console.log("🏐 Ball movement stopped");
+    }
+    resetBallPosition() {
+        if (!this.renderEngine)
+            return;
+        const ball = this.renderEngine.getMesh('pongBall');
+        if (ball) {
+            ball.position = new Vector3(0.00, 0.78, 0.00);
+        }
+    }
+    startBallMovement() {
+        // Random initial direction, normalized and scaled to speed (units/sec)
+        const randomZ = (Math.random() - 0.5) * 0.8;
+        const randomX = Math.random() > 0.5 ? 1 : -1;
+        const dir = new Vector3(randomX, 0, randomZ).normalize();
+        this.ballSpeed = 18;
+        this.ballVelocity = dir.scale(this.ballSpeed);
+        console.log(`🏐 Ball velocity set to: (${this.ballVelocity.x.toFixed(2)}, ${this.ballVelocity.y.toFixed(2)}, ${this.ballVelocity.z.toFixed(2)}) (u/s)`);
+    }
+    updatePaddlePosition(paddleName, inputDirection, deltaTime) {
+        if (!this.renderEngine || inputDirection === 0)
+            return;
+        const paddle = this.renderEngine.getMesh(paddleName);
+        if (!paddle)
+            return;
+        const moveSpeedPerSec = 12; // units/sec
+        const dz = inputDirection * moveSpeedPerSec * (Math.max(0, deltaTime) / 1000);
+        const intendedNewPosition = paddle.position.add(new Vector3(0, 0, dz));
+        // Collision detection logic (simplified from your original)
+        if (this.canPaddleMoveTo(paddle, intendedNewPosition)) {
+            paddle.position.z = intendedNewPosition.z;
+        }
+    }
+    canPaddleMoveTo(paddle, newPosition) {
+        if (!this.renderEngine)
+            return false;
+        const floorPlane = this.renderEngine.getMesh('floorPlane');
+        if (!floorPlane)
+            return true;
+        floorPlane.computeWorldMatrix(true);
+        floorPlane.getBoundingInfo().update(floorPlane.getWorldMatrix());
+        const floorBounds = floorPlane.getBoundingInfo().boundingBox;
+        paddle.computeWorldMatrix(true);
+        paddle.getBoundingInfo().update(paddle.getWorldMatrix());
+        const paddleBounds = paddle.getBoundingInfo().boundingBox;
+        const paddleDepth = Math.abs(paddleBounds.maximumWorld.z - paddleBounds.minimumWorld.z);
+        const frontEdge = newPosition.z + (paddleDepth / 2);
+        const backEdge = newPosition.z - (paddleDepth / 2);
+        return frontEdge <= floorBounds.maximumWorld.z &&
+            backEdge >= floorBounds.minimumWorld.z;
+    }
+    update(deltaTime) {
+        if (!this.ballActive || !this.renderEngine)
+            return;
+        this.updateBallPosition(deltaTime);
+    }
+    updateBallPosition(deltaTime) {
+        if (!this.renderEngine)
+            return;
+        const ball = this.renderEngine.getMesh('pongBall');
         if (!ball)
             return;
-        // Update ball position based on velocity
-        ball.position.addInPlace(this.ballVelocity);
-        // Check collisions and bounce
+        // Move ball using frame-rate independent integration
+        const dt = Math.max(0, deltaTime) / 1000; // seconds
+        if (dt > 0) {
+            const displacement = this.ballVelocity.scale(dt);
+            ball.position.addInPlace(displacement);
+        }
+        // Check collisions
         this.checkBallCollisions(ball);
     }
     checkBallCollisions(ball) {
-        // Get ball bounds for collision detection
-        ball.computeWorldMatrix(true);
-        ball.getBoundingInfo().update(ball.getWorldMatrix());
-        const ballBounds = ball.getBoundingInfo().boundingBox;
-        const ballRadius = (ballBounds.maximumWorld.x - ballBounds.minimumWorld.x) / 2;
-        // Check collision with floor boundaries (Z-axis walls)
-        const floorPlane = this.scene.getMeshByName('floorPlane');
-        if (floorPlane) {
-            floorPlane.computeWorldMatrix(true);
-            floorPlane.getBoundingInfo().update(floorPlane.getWorldMatrix());
-            const floorBounds = floorPlane.getBoundingInfo().boundingBox;
-            // Ball hits front or back wall (Z boundaries)
-            if (ball.position.z + ballRadius >= floorBounds.maximumWorld.z ||
-                ball.position.z - ballRadius <= floorBounds.minimumWorld.z) {
-                this.ballVelocity.z *= -1; // Reverse Z velocity
-                this.playBallWallBounceSound();
-                console.log("⚽ Ball bounced off Z wall");
+        this.checkWallCollisions(ball);
+        this.checkPaddleCollisions(ball);
+    }
+    checkWallCollisions(ball) {
+        if (!this.renderEngine)
+            return;
+        const floorPlane = this.renderEngine.getMesh('floorPlane');
+        if (!floorPlane)
+            return;
+        floorPlane.computeWorldMatrix(true);
+        floorPlane.getBoundingInfo().update(floorPlane.getWorldMatrix());
+        const floorBounds = floorPlane.getBoundingInfo().boundingBox;
+        const ballRadius = 0.39;
+        if (ball.position.z + ballRadius >= floorBounds.maximumWorld.z) {
+            this.ballVelocity.z = -Math.abs(this.ballVelocity.z);
+            ball.position.z = floorBounds.maximumWorld.z - ballRadius;
+            if (this.renderEngine && this.renderEngine.playBallWallBounceSound) {
+                this.renderEngine.playBallWallBounceSound();
             }
         }
-        // Check collision with paddles (X boundaries and paddle collision)
-        this.checkPaddleCollisions(ball, ballRadius);
+        if (ball.position.z - ballRadius <= floorBounds.minimumWorld.z) {
+            this.ballVelocity.z = Math.abs(this.ballVelocity.z);
+            ball.position.z = floorBounds.minimumWorld.z + ballRadius;
+            if (this.renderEngine && this.renderEngine.playBallWallBounceSound) {
+                this.renderEngine.playBallWallBounceSound();
+            }
+        }
     }
-    checkPaddleCollisions(ball, ballRadius) {
-        const leftPaddle = this.scene.getMeshByName('paddleLeft');
-        const rightPaddle = this.scene.getMeshByName('paddleRight');
+    checkPaddleCollisions(ball) {
+        if (!this.renderEngine)
+            return;
+        const leftPaddle = this.renderEngine.getMesh('paddleLeft');
+        const rightPaddle = this.renderEngine.getMesh('paddleRight');
+        const ballRadius = 0.39;
         // Check collision with left paddle
         if (leftPaddle && this.ballCollidesWithPaddle(ball, leftPaddle, ballRadius)) {
             this.ballVelocity.x = Math.abs(this.ballVelocity.x); // Ensure ball moves right
             this.addPaddleInfluence(ball, leftPaddle);
-            this.playBallHitSound();
-            console.log("⚽ Ball hit left paddle");
+            if (this.renderEngine && this.renderEngine.playBallHitSound) {
+                this.renderEngine.playBallHitSound();
+            }
+            console.log("🏐 Ball hit left paddle");
         }
         // Check collision with right paddle  
         if (rightPaddle && this.ballCollidesWithPaddle(ball, rightPaddle, ballRadius)) {
             this.ballVelocity.x = -Math.abs(this.ballVelocity.x); // Ensure ball moves left
             this.addPaddleInfluence(ball, rightPaddle);
-            this.playBallHitSound();
-            console.log("⚽ Ball hit right paddle");
+            if (this.renderEngine && this.renderEngine.playBallHitSound) {
+                this.renderEngine.playBallHitSound();
+            }
+            console.log("🏐 Ball hit right paddle");
         }
         // Check if ball went past paddles (scoring)
         if (ball.position.x < -25) {
-            console.log("🎯 Right player scores!");
-            this.playScoreSound();
+            if (this.scoreManager) {
+                this.scoreManager.scorePoint('right');
+            }
+            if (this.renderEngine && this.renderEngine.playScoreSound) {
+                this.renderEngine.playScoreSound();
+            }
+            this.hasScored = true;
             this.resetBall();
         }
         else if (ball.position.x > 25) {
-            console.log("🎯 Left player scores!");
-            this.playScoreSound();
+            if (this.scoreManager) {
+                this.scoreManager.scorePoint('left');
+            }
+            if (this.renderEngine && this.renderEngine.playScoreSound) {
+                this.renderEngine.playScoreSound();
+            }
+            this.hasScored = true;
             this.resetBall();
         }
     }
@@ -1032,33 +1151,480 @@ class GLBScene {
     addPaddleInfluence(ball, paddle) {
         // Add some randomness and paddle position influence to ball direction
         const relativeHitPosition = (ball.position.z - paddle.position.z) / 2; // Normalize hit position
-        this.ballVelocity.z = relativeHitPosition * 0.3; // Add influence to Z direction
-        // Slightly increase speed after each paddle hit
+        this.ballVelocity.z += relativeHitPosition * this.ballSpeed * 0.2; // Add influence to Z direction
+        // Slightly increase speed after each paddle hit (cap to a reasonable max)
+        this.ballSpeed = Math.min(this.ballSpeed * 1.05, 36.0);
+        // Normalize and rescale to maintain proper speed
         this.ballVelocity.normalize();
-        this.ballVelocity.scaleInPlace(this.ballSpeed * 1.05);
-        this.ballSpeed = Math.min(this.ballSpeed * 1.02, 0.8); // Cap max speed
+        this.ballVelocity.scaleInPlace(this.ballSpeed);
+        console.log(`🏐 Ball speed increased to: ${this.ballSpeed.toFixed(2)}`);
     }
     resetBall() {
-        const ball = this.scene.getMeshByName('pongBall');
+        if (!this.renderEngine)
+            return;
+        const ball = this.renderEngine.getMesh('pongBall');
         if (!ball)
             return;
         // Reset ball to center
         ball.position = new Vector3(0.00, 0.78, 0.00);
-        // Reset velocity with random direction
-        const randomZ = (Math.random() - 0.5) * 0.4;
-        const randomX = Math.random() > 0.5 ? 0.3 : -0.3;
-        this.ballVelocity = new Vector3(randomX, 0, randomZ);
-        this.ballSpeed = 0.4; // Reset speed
-        console.log("⚽ Ball reset to center");
+        // Stop the ball movement temporarily
+        this.ballActive = false;
+        this.ballVelocity = new Vector3(0, 0, 0);
+        // If someone scored, reset paddles and immediately restart ball (no UI countdown between rounds)
+        if (this.hasScored) {
+            this.resetPaddlePositions();
+            this.resetScoredFlag();
+            this.resetBallMovement();
+        }
+        else {
+            this.resetBallMovement();
+        }
+    }
+    resetBallMovement() {
+        // Reset with random direction and base speed (units/sec)
+        const randomZ = (Math.random() - 0.5) * 0.8;
+        const randomX = Math.random() > 0.5 ? 1 : -1;
+        const dir = new Vector3(randomX, 0, randomZ).normalize();
+        this.ballSpeed = 18;
+        this.ballVelocity = dir.scale(this.ballSpeed);
+        this.ballActive = true;
+        console.log("🏐 Ball reset to center with velocity:", this.ballVelocity);
+    }
+    // Removed post-score countdown; handled immediately for quicker gameplay
+    dispose() {
+        this.ballActive = false;
     }
 }
-// ✅ Entry point
+// =====================================
+// INPUT MANAGER
+// =====================================
+class InputManager {
+    constructor() {
+        this.keyStates = new Map();
+        this.inputHandlers = new Map();
+    }
+    initialize() {
+        this.setupEventListeners();
+        console.log("🎮 Input manager initialized");
+    }
+    setupEventListeners() {
+        window.addEventListener('keydown', (event) => {
+            const key = event.key.toLowerCase();
+            if (!this.keyStates.get(key)) {
+                this.keyStates.set(key, true);
+                const handler = this.inputHandlers.get(key);
+                if (handler)
+                    handler(true);
+            }
+        });
+        window.addEventListener('keyup', (event) => {
+            const key = event.key.toLowerCase();
+            this.keyStates.set(key, false);
+            const handler = this.inputHandlers.get(key);
+            if (handler)
+                handler(false);
+        });
+    }
+    isKeyPressed(key) {
+        return this.keyStates.get(key.toLowerCase()) || false;
+    }
+    registerHandler(key, handler) {
+        this.inputHandlers.set(key.toLowerCase(), handler);
+    }
+    unregisterHandler(key) {
+        this.inputHandlers.delete(key.toLowerCase());
+    }
+    dispose() {
+        this.inputHandlers.clear();
+        this.keyStates.clear();
+    }
+}
+// =====================================
+// SCORE MANAGER
+// =====================================
+class ScoreManager {
+    constructor() {
+        this.leftScore = 0;
+        this.rightScore = 0;
+    }
+    initialize() {
+        console.log("📊 Score manager initialized");
+    }
+    setScoreChangeCallback(callback) {
+        this.onScoreChange = callback;
+    }
+    scorePoint(side) {
+        if (side === 'left') {
+            this.leftScore++;
+        }
+        else {
+            this.rightScore++;
+        }
+        console.log(`🎯 ${side} player scores! Score: ${this.leftScore} - ${this.rightScore}`);
+        if (this.onScoreChange) {
+            this.onScoreChange({ leftScore: this.leftScore, rightScore: this.rightScore, scorer: side });
+        }
+    }
+    getScore() {
+        return { left: this.leftScore, right: this.rightScore };
+    }
+    reset() {
+        this.leftScore = 0;
+        this.rightScore = 0;
+        if (this.onScoreChange) {
+            this.onScoreChange({ leftScore: this.leftScore, rightScore: this.rightScore, scorer: 'left' });
+        }
+    }
+}
+class GameStateManager {
+    constructor(systems) {
+        this.currentState = null;
+        this.states = new Map();
+        this.systems = systems;
+        this.initializeStates();
+    }
+    initializeStates() {
+        this.states.set('menu', new MenuState(this.systems, this));
+        this.states.set('loading', new LoadingState(this.systems, this));
+        this.states.set('playing', new PlayingState(this.systems, this));
+        this.states.set('paused', new PausedState(this.systems, this));
+        this.states.set('gameOver', new GameOverState(this.systems, this));
+    }
+    async setState(stateName) {
+        if (this.currentState) {
+            this.currentState.exit();
+        }
+        const newState = this.states.get(stateName);
+        if (newState) {
+            this.currentState = newState;
+            await this.currentState.enter();
+            console.log(`🎮 State changed to: ${stateName}`);
+        }
+    }
+    update(deltaTime) {
+        if (this.currentState) {
+            this.currentState.update(deltaTime);
+        }
+    }
+    getState(stateName) {
+        return this.states.get(stateName);
+    }
+}
+// =====================================
+// GAME STATES
+//
+// Abstract classes
+// =====================================
+class GameState {
+    constructor(systems, stateManager) {
+        this.systems = systems;
+        this.stateManager = stateManager;
+    }
+}
+class MenuState extends GameState {
+    enter() {
+        console.log("📋 Entered Menu State");
+        this.systems.uiManager.showStart();
+        this.systems.inputManager.registerHandler(' ', (pressed) => {
+            if (pressed) {
+                this.systems.uiManager.hideStart();
+                this.stateManager.setState('playing');
+            }
+        });
+    }
+    exit() {
+        this.systems.uiManager.hideStart();
+        this.systems.inputManager.unregisterHandler(' ');
+    }
+    update(deltaTime) { }
+}
+class LoadingState extends GameState {
+    enter() {
+        console.log("⏳ Entered Loading State");
+        // Simulate loading, then transition to countdown
+        setTimeout(() => {
+            this.stateManager.setState('countdown');
+        }, 1000);
+    }
+    exit() { }
+    update(deltaTime) { }
+}
+class PlayingState extends GameState {
+    constructor() {
+        super(...arguments);
+        this.isResumingFromPause = false;
+        this.countdownState = {
+            active: false,
+            currentCount: 3,
+            type: null,
+            timer: null,
+            resolve: null
+        };
+    }
+    setResumingFromPause(resuming) {
+        this.isResumingFromPause = resuming;
+    }
+    async enter() {
+        console.log("🎮 Entered Playing State");
+        // Set up physics system
+        this.systems.physicsSystem.setRenderEngine(this.systems.renderEngine);
+        this.systems.physicsSystem.setScoreManager(this.systems.scoreManager);
+        if (this.isResumingFromPause) {
+            console.log("🎮 Resuming from pause");
+            // Check if there was a countdown in progress
+            if (this.countdownState.active) {
+                console.log("🎮 Resuming interrupted countdown");
+                this.resumeCountdown();
+                // Wait for countdown to finish before starting/resuming ball
+                await new Promise((resolve) => {
+                    const originalResolve = this.countdownState.resolve;
+                    this.countdownState.resolve = () => {
+                        if (originalResolve)
+                            originalResolve();
+                        resolve();
+                    };
+                });
+                this.systems.physicsSystem.startBall();
+            }
+            else {
+                console.log("🎮 No countdown to resume - resuming ball");
+                this.systems.physicsSystem.resumeBall();
+            }
+        }
+        else {
+            console.log("🎮 Starting fresh game - doing countdown");
+            await this.countdown('game-start');
+            this.systems.physicsSystem.startBall();
+        }
+        this.setupInputHandlers();
+        this.isResumingFromPause = false; // Reset flag after use
+    }
+    exit() {
+        this.pauseCountdown();
+        this.cleanupInputHandlers();
+        this.systems.physicsSystem.stopBall();
+    }
+    update(deltaTime) {
+        this.updatePaddleMovement(deltaTime);
+    }
+    countdown(type) {
+        return new Promise((resolve) => {
+            // If resuming an existing countdown, continue from where we left off
+            const startingCount = this.countdownState.active ? this.countdownState.currentCount : 3;
+            this.countdownState.active = true;
+            this.countdownState.type = 'game-start';
+            this.countdownState.currentCount = startingCount;
+            this.countdownState.resolve = resolve;
+            const isPostScore = false; // no post-score countdown now
+            const tick = () => {
+                if (!this.countdownState.active) {
+                    // Countdown was paused, don't continue
+                    return;
+                }
+                if (isPostScore) {
+                    console.log(`⏱️ ${this.countdownState.currentCount}...`);
+                    this.systems.uiManager.showCountdown(this.countdownState.currentCount);
+                }
+                else {
+                    console.log(this.countdownState.currentCount);
+                    this.systems.uiManager.showCountdown(this.countdownState.currentCount);
+                }
+                if (this.countdownState.currentCount <= 0) {
+                    this.finishCountdown();
+                }
+                else {
+                    this.countdownState.currentCount--;
+                    this.countdownState.timer = setTimeout(tick, 1000);
+                }
+            };
+            tick();
+        });
+    }
+    finishCountdown() {
+        if (this.countdownState.timer) {
+            clearTimeout(this.countdownState.timer);
+        }
+        console.log("Countdown finished!");
+        if (this.countdownState.resolve) {
+            this.countdownState.resolve();
+        }
+        this.resetCountdownState();
+        this.systems.uiManager.clearCountdown();
+    }
+    pauseCountdown() {
+        if (this.countdownState.active && this.countdownState.timer) {
+            clearTimeout(this.countdownState.timer);
+            this.countdownState.timer = null;
+            console.log(`⏸️ Countdown paused at ${this.countdownState.currentCount}`);
+        }
+    }
+    resumeCountdown() {
+        if (this.countdownState.active && !this.countdownState.timer && this.countdownState.resolve) {
+            // Reset countdown to 3 when resuming after pause
+            this.countdownState.currentCount = 3;
+            console.log(`▶️ Restarting countdown from 3`);
+            const isPostScore = false;
+            const tick = () => {
+                if (!this.countdownState.active) {
+                    return;
+                }
+                if (isPostScore) {
+                    console.log(`⏱️ ${this.countdownState.currentCount}...`);
+                    this.systems.uiManager.showCountdown(this.countdownState.currentCount);
+                }
+                else {
+                    console.log(this.countdownState.currentCount);
+                    this.systems.uiManager.showCountdown(this.countdownState.currentCount);
+                }
+                if (this.countdownState.currentCount <= 0) {
+                    this.finishCountdown();
+                }
+                else {
+                    this.countdownState.currentCount--;
+                    this.countdownState.timer = setTimeout(tick, 1000);
+                }
+            };
+            tick();
+        }
+    }
+    resetCountdownState() {
+        this.countdownState.active = false;
+        this.countdownState.currentCount = 3;
+        this.countdownState.type = null;
+        this.countdownState.timer = null;
+        this.countdownState.resolve = null;
+    }
+    setupInputHandlers() {
+        this.systems.inputManager.registerHandler(' ', (pressed) => {
+            if (pressed) {
+                this.stateManager.setState('paused');
+            }
+        });
+    }
+    updatePaddleMovement(deltaTime) {
+        // Left paddle movement
+        let leftInput = 0;
+        if (this.systems.inputManager.isKeyPressed('arrowleft'))
+            leftInput -= 1;
+        if (this.systems.inputManager.isKeyPressed('arrowright'))
+            leftInput += 1;
+        if (leftInput !== 0) {
+            this.systems.physicsSystem.updatePaddlePosition('paddleLeft', leftInput, deltaTime);
+        }
+        // Right paddle movement
+        let rightInput = 0;
+        if (this.systems.inputManager.isKeyPressed('a'))
+            rightInput -= 1;
+        if (this.systems.inputManager.isKeyPressed('d'))
+            rightInput += 1;
+        if (rightInput !== 0) {
+            this.systems.physicsSystem.updatePaddlePosition('paddleRight', rightInput, deltaTime);
+        }
+    }
+    cleanupInputHandlers() {
+        this.systems.inputManager.unregisterHandler(' ');
+    }
+}
+class PausedState extends GameState {
+    enter() {
+        console.log("⏸️ Entered Paused State");
+        this.systems.uiManager.showPause({
+            onResume: () => {
+                const playingState = this.stateManager.getState('playing');
+                if (playingState)
+                    playingState.setResumingFromPause(true);
+                this.stateManager.setState('playing');
+            },
+            onRestart: () => {
+                this.systems.scoreManager.reset();
+                this.systems.physicsSystem.stopBall();
+                this.systems.uiManager.hidePause();
+                const playingState = this.stateManager.getState('playing');
+                if (playingState)
+                    playingState.setResumingFromPause(false);
+                this.stateManager.setState('playing');
+            }
+        });
+        this.systems.inputManager.registerHandler(' ', (pressed) => {
+            if (pressed) {
+                const playingState = this.stateManager.getState('playing');
+                if (playingState)
+                    playingState.setResumingFromPause(true);
+                this.stateManager.setState('playing');
+            }
+        });
+    }
+    exit() {
+        this.systems.uiManager.hidePause();
+        this.systems.inputManager.unregisterHandler(' ');
+    }
+    update(deltaTime) { }
+}
+class GameOverState extends GameState {
+    enter() {
+        console.log("🏁 Entered Game Over State");
+        this.systems.inputManager.registerHandler('r', (pressed) => {
+            if (pressed) {
+                this.systems.scoreManager.reset();
+                const playingState = this.stateManager.getState('playing');
+                if (playingState)
+                    playingState.setResumingFromPause(false);
+                this.stateManager.setState('playing');
+            }
+        });
+    }
+    exit() {
+        this.systems.inputManager.unregisterHandler('r');
+    }
+    update(deltaTime) { }
+}
+// =====================================
+// SUPPORTING SYSTEMS
+// =====================================
+class AudioManager {
+    initialize() {
+        console.log("🔊 Audio manager initialized");
+    }
+    play(soundName) {
+        console.log(`🔊 Playing sound: ${soundName}`);
+    }
+    dispose() { }
+}
+class UIManager {
+    constructor() {
+        this.gui = new GUIManager();
+    }
+    initialize() {
+        console.log("🖥️ UI manager initialized");
+    }
+    // Start Menu
+    showStart(options) { this.gui.createStartMenu(options); }
+    hideStart() { this.gui.removeStartMenu(); }
+    // Pause Menu
+    showPause(options) { this.gui.createPauseMenu(options); }
+    hidePause() { this.gui.removePauseMenu(); }
+    // Countdown
+    showCountdown(value) { this.gui.updateCountdown(value); }
+    clearCountdown() { this.gui.clearCountdown(); }
+    // Score flash
+    showScoreFlash(params) {
+        this.gui.showScoreFlash(params);
+    }
+    clearScoreFlash() { this.gui.clearScoreFlash(); }
+    update(deltaTime) { }
+    render() { }
+    dispose() { this.gui.dispose(); }
+}
+// =====================================
+// INITIALIZATION
+// =====================================
 window.addEventListener("DOMContentLoaded", () => {
     const canvas = document.getElementById("renderCanvas");
     if (!canvas) {
         console.error("❌ Canvas element with id 'renderCanvas' not found.");
         return;
     }
-    new GLBScene(canvas);
+    console.log("🚀 Starting Pong Game...");
+    new PongGameManager(canvas);
 });
 //# sourceMappingURL=main.js.map
