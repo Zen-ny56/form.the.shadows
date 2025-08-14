@@ -1112,7 +1112,7 @@ class PhysicsSystem {
         // Check if ball went past paddles (scoring)
         if (ball.position.x < -25) {
             if (this.scoreManager) {
-                this.scoreManager.scorePoint('right');
+                this.scoreManager.scorePoint('left');
             }
             if (this.renderEngine && this.renderEngine.playScoreSound) {
                 this.renderEngine.playScoreSound();
@@ -1122,7 +1122,7 @@ class PhysicsSystem {
         }
         else if (ball.position.x > 25) {
             if (this.scoreManager) {
-                this.scoreManager.scorePoint('left');
+                this.scoreManager.scorePoint('right');
             }
             if (this.renderEngine && this.renderEngine.playScoreSound) {
                 this.renderEngine.playScoreSound();
@@ -1502,21 +1502,21 @@ class PlayingState extends GameState {
         });
     }
     updatePaddleMovement(deltaTime) {
-        // Left paddle movement
+        // Left paddle movement (Up/Down arrow keys)
         let leftInput = 0;
-        if (this.systems.inputManager.isKeyPressed('arrowleft'))
-            leftInput -= 1;
-        if (this.systems.inputManager.isKeyPressed('arrowright'))
+        if (this.systems.inputManager.isKeyPressed('arrowup'))
             leftInput += 1;
+        if (this.systems.inputManager.isKeyPressed('arrowdown'))
+            leftInput -= 1;
         if (leftInput !== 0) {
             this.systems.physicsSystem.updatePaddlePosition('paddleLeft', leftInput, deltaTime);
         }
-        // Right paddle movement
+        // Right paddle movement (W/S keys)
         let rightInput = 0;
-        if (this.systems.inputManager.isKeyPressed('a'))
-            rightInput -= 1;
-        if (this.systems.inputManager.isKeyPressed('d'))
+        if (this.systems.inputManager.isKeyPressed('w'))
             rightInput += 1;
+        if (this.systems.inputManager.isKeyPressed('s'))
+            rightInput -= 1;
         if (rightInput !== 0) {
             this.systems.physicsSystem.updatePaddlePosition('paddleRight', rightInput, deltaTime);
         }
